@@ -1,3 +1,0 @@
-l_2 ,sharpness,reverse_iter: ,1,corruption: ,['gaussian_noise'],severity: 1,batch-size: 16,0.6258,0.6364
-l_2 ,sharpness,reverse_iter: ,"[1, 2]",corruption: ,['gaussian_noise'],severity: 1,batch-size: 16,0.6258,0.6364
-l_2 + ,['sharpness'], reverse_iter: ,1, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.478

@@ -1,5 +1,0 @@
-train epoch,train loss,train match acc.,test loss,test match acc.,test match real acc.,test match fake acc.
-train epoch, train loss, train match acc.
-train epoch, train loss, train match acc.
-train epoch, train loss, train match acc.
-0,3.081696269759448,0.3152108674775928
