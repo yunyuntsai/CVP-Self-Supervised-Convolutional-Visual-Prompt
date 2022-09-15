@@ -216,7 +216,7 @@ class Contrastive_Transform:
             transforms.RandomResizedCrop(size=size),
             # transforms.ColorJitter(0.8, 0.8, 0.8 , 0.2),
             # transforms.RandomGrayscale(p=0.2),
-            transforms.RandomRotation((-90, 90)),
+            # transforms.RandomRotation((-90, 90)),
             transforms.RandomHorizontalFlip(),)  
             
     
