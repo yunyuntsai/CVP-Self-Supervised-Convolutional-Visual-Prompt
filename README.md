@@ -19,7 +19,7 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --eval --batch-size 32 -
 ```
  
  > 15 corruption types:  
- > gaussian_noise, shot_noise, impulse_noise,  
- > defocus_blur, motion_blur, glass_blur, zoom_blur,  
- > snow, frost, fog, brightness,  
- > contrast,elastic_transform, pixelate, jpeg_compression
+ >> gaussian_noise, shot_noise, impulse_noise,  
+ >> defocus_blur, motion_blur, glass_blur, zoom_blur,  
+ >> snow, frost, fog, brightness,  
+ >> contrast,elastic_transform, pixelate, jpeg_compression
