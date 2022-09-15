@@ -8,6 +8,10 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --batch-size 32 --test_b
 ```
 
 - To reverse Cifar10-C at Testing phase, run following cmd line
+  - 15 corruption types: gaussian_noise, shot_noise, impulse_noise,
+                         defocus_blur, motion_blur , glass_blur, zoom_blur, 
+                         snow, frost, fog, brightness, 
+                         contrast,elastic_transform, pixelate, jpeg_compression
 
 ```
 CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --eval --batch-size 32 --test_batch 16 \\
@@ -18,7 +22,3 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --eval --batch-size 32 -
 --corruption {corruption type}  --severity {severity level} --aug_name sharpness --attack_iters 1 
 ```
 
-- 15 corruption types**: gaussian_noise, shot_noise, impulse_noise,
-                         defocus_blur, motion_blur , glass_blur, zoom_blur, 
-                         snow, frost, fog, brightness, 
-                         contrast,elastic_transform, pixelate, jpeg_compression
