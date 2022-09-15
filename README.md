@@ -41,3 +41,5 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_ba
 - For the pretrained checkpoint, please download from following links
 > ResNet50 pretrained checkpoint for ImageNet: [link](https://drive.google.com/file/d/1tDW8-HCltiI_ECQgRDb-piXHweZdFt9B/view?usp=sharing) </br>
 > WideResNet pretrained checkpoint for CIFAR10: [link](https://drive.google.com/file/d/1Hg0Z8IbQCFFBo3FCnEfHF1xP-2P5ZhUf/view?usp=sharing) </br>
+> SSL pretrained checkpoint for ImageNet-C: [link](https://drive.google.com/file/d/15jnhtNQVlobrQraJA38KTXUR7nLCfuVq/view?usp=sharing) </br>
+> SSL pretrained checkpoint for CIFAR10-C: [link](https://drive.google.com/file/d/1c2rdlZdlI6w1SWvCtxq0w_bnK3-dwTtX/view?usp=sharing) </br>
