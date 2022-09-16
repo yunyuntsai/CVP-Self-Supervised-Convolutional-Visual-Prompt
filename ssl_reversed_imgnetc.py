@@ -28,6 +28,7 @@ from scipy import stats
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model
 upper_limit, lower_limit = 1, 0
 
 imgnet_mean=(0.485, 0.456, 0.406)
@@ -156,7 +157,6 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             param_grad = param.grad.detach()
             delta_grad = delta.grad.detach()
 
-            print(param_grad)
             # print(delta_grad)
 
             p = param
@@ -226,8 +226,8 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
         if aug_name is None:
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_inf')
-            with torch.no_grad():                                       
-                out, _ = model(x + delta)
+            new_x = x + delta
+
         else: 
             delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_2', aug_name,  denormalize, normalize)
@@ -235,14 +235,74 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
             # print(delta.shape)
             # print(param)
             new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
-            with torch.no_grad():
-                out, _ = model(new_x)
+        
 
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
-
-        # out = out[: , :10]
+        
+        with torch.no_grad():
+            out, _ = model(new_x)
+            # out = out[: , :10]
         acc += (out.max(1)[1] == y).sum().item()
+        print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+    print('Accuracy after SSL training: {}'.format(acc / test_n))
+    
+    
+    return clean_acc/test_n, acc/test_n
+
+
+def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, aug_name, normalize, denormalize):
+    epsilon = (16 / 255.)
+    pgd_alpha = (4 / 255.)
+    test_n = 0
+    clean_acc = 0
+    acc = 0
+    before_loss_list = []
+    final_loss_list = []
+    correct = []
+
+    model = config_model(model)
+
+    for i, batch in enumerate(test_batches):
+
+        model_state, opt_state = copy_model_and_optimizer(model, opt)
+
+        x, y = batch['input'], batch['target']
+        test_n += y.shape[0]
+        nn.BatchNorm2d.prior = 1
+        with torch.no_grad():
+            clean_out, _ = model(x)
+
+        # clean_out = clean_out[: , :10]
+        clean_acc += (clean_out.max(1)[1] == y).sum().item()
+
+        if aug_name is None:
+            delta = compute_reverse_attack(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_inf')
+            new_x = x + delta
+
+        else: 
+            delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', aug_name,  denormalize, normalize)
+            param_all = param.repeat(x.shape[0])
+            # print(delta.shape)
+            # print(param)
+            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
+        
+            before_loss_list.append(before_loss)
+            final_loss_list.append(final_loss)
+        
+        # with torch.no_grad():
+        #     out, _ = model(new_x)
+            # out = out[: , :10]
+        # acc += (out.max(1)[1] == y).sum().item()
+        # print(new_x.max(), new_x.min())
+        adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize)
+        correctness = test_single(model, new_x, y)
+        acc += correctness
+        #reset model
+        model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
+
         print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
     
@@ -327,9 +387,10 @@ class SslTrainer:
 
         x_const = self.contrast_transform(x, transforms_num)
 
+        opt.zero_grad()
         c_loss, correct = self.compute_ssl_contrastive_loss(x_const, criterion, model, contrast_head, x.shape[0], transforms_num)
 
-        opt.zero_grad()
+    
         c_loss.backward()
         opt.step()
 
@@ -410,11 +471,11 @@ class SslTrainer:
 
 
     @staticmethod
-    def save_state_dict(dist_head, opt, epoch, args, isbest):
+    def save_state_dict(dist_head, optimizer, epoch, args, isbest):
         state_dict = {
             'epoch': epoch,
             'contrast_head_state_dict': dist_head.state_dict(),
-            'optimizer_state_dict': opt.state_dict()
+            'optimizer_state_dict': optimizer.state_dict()
         }
         if isbest:
             torch.save(state_dict, os.path.join(args.output_dir, "ssl_contrast_best.pth"))
@@ -532,7 +593,8 @@ def main():
               {'params': no_decay, 'weight_decay': 0}]
 
     learning_rate = args.lr
-    opt = torch.optim.Adam(params, lr=learning_rate)
+    backbone_opt = torch.optim.AdamW(model.parameters(), lr=0.00025)
+    ssl_opt = torch.optim.Adam(params, lr=learning_rate)
 
 
     num_training_steps_per_epoch = len(train_dataset) // args.batch_size
@@ -563,7 +625,7 @@ def main():
         print("Loading checkpoint: {}".format(args.ckpt))
         ckpt = torch.load(args.ckpt)
         ssl_head.load_state_dict(ckpt['contrast_head_state_dict'])
-        opt.load_state_dict(ckpt['optimizer_state_dict'])
+        ssl_opt.load_state_dict(ckpt['optimizer_state_dict'])
         restart_epoch = ckpt['epoch'] + 1
     print('loaded model epoch: {}'.format(restart_epoch))
     ssl_head.eval().cuda()
@@ -633,7 +695,10 @@ def main():
                 print('aug name: ', args.aug_name)
                 print('corruption type: ', corruption_type[i:i+1][0])
                 # acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name, normalize, denormalize)
-                acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)
+                # acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, 
+                #                                     criterion, attack_iter, args.aug_name, normalize, denormalize)
+                acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, 
+                                              criterion, attack_iter, args.aug_name, normalize, denormalize)
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
@@ -656,17 +721,17 @@ def main():
 
             print("Epoch number: {}".format(epoch))
             start_step = epoch * num_training_steps_per_epoch
-            train_loss, train_n, train_matches = trainer.train_one_epoch(model, ssl_head, train_batches, opt,
+            train_loss, train_n, train_matches = trainer.train_one_epoch(model, ssl_head, train_batches, ssl_opt,
                                                 lr_schedule_values, start_step, num_training_steps_per_epoch,
                                                    criterion, args.debug)
             
             print('Epoch: %d, Train accuracy: %.4f, Train loss:  %.4f' % (epoch, train_matches / train_n, train_loss / train_n))
             
             if train_matches / train_n > best_matches:
-                trainer.save_state_dict(ssl_head, opt, epoch, args, isbest=True)
+                trainer.save_state_dict(ssl_head, ssl_opt, epoch, args, isbest=True)
                 best_matches = train_matches / train_n
             if epoch % args.save_freq == 0 :
-                trainer.save_state_dict(ssl_head, opt, epoch, args, isbest=False)
+                trainer.save_state_dict(ssl_head, ssl_opt, epoch, args, isbest=False)
                         
             with open(os.path.join(args.output_dir, "train_log.csv"), 'a') as f: 
                 writer = csv.writer(f)
