@@ -37,6 +37,12 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_ba
 --data-dir ../ImageNet-Data/ --corr-dir ./data/ImageNetC-customize/ --md_path ./resnet50.pth  --ckpt ./data/ckpts/imagenetc_ssl/ssl_contrast_best.pth  
 --corruption {corruption type}  --severity {severity level 1 --> 5} --aug_name sharpness --attack_iters 1 --output_dir output/{test_log save path}
 ```
+- To run reverse + adaptation at Testing phase, add argument --allow_adapt
+```
+CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_batch 5 --eval --allow_adapt\\
+--data-dir ../ImageNet-Data/ --corr-dir ./data/ImageNetC-customize/ --md_path ./resnet50.pth  --ckpt ./data/ckpts/imagenetc_ssl/ssl_contrast_best.pth  
+--corruption {corruption type}  --severity {severity level 1 --> 5} --aug_name sharpness --attack_iters 1 --output_dir output/{test_log save path}
+```
 
 - For the pretrained checkpoint, please download from following links
 > ResNet50 pretrained checkpoint for ImageNet: [link](https://drive.google.com/file/d/1tDW8-HCltiI_ECQgRDb-piXHweZdFt9B/view?usp=sharing) </br>
