@@ -28,6 +28,7 @@ from scipy import stats
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model
 
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
@@ -298,6 +299,61 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
     return clean_acc/test_n, acc/test_n
 
 
+def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, aug_name):
+
+    epsilon = (8 / 255.)
+    pgd_alpha = (2 / 255.)
+
+    acc = 0
+    test_n = 0
+    clean_acc = 0
+    
+    before_loss_list = []
+    final_loss_list = []
+
+    model = config_model(model)
+
+    for i, batch in enumerate(test_batches):
+
+        model_state, opt_state = copy_model_and_optimizer(model, opt)
+
+        x, y = batch['input'], batch['target']
+        test_n += y.shape[0]
+        nn.BatchNorm2d.prior = 1
+
+        with torch.no_grad():
+            clean_out, _ = model(x)
+        clean_acc += (clean_out.max(1)[1] == y).sum().item()
+
+        if aug_name is None:
+            delta = compute_reverse_attack(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2')
+            new_x = x + delta
+        else: 
+            delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', aug_name)
+            param_all = param.repeat(x.shape[0])
+
+            new_x = trans_aug(aug_name[0], x, param_all)  + delta
+            
+            before_loss_list.append(before_loss)
+            final_loss_list.append(final_loss)
+        
+        adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize=None)
+        correctness = test_single(model, new_x, y)
+        acc += correctness
+
+        #reset model
+        model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
+
+        print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+    print('Accuracy after SSL training: {}'.format(acc / test_n))
+
+    # with open('./loss_histogram/cifar10c_orig.npy', 'wb') as f:
+    #     np.save(f, np.array([before_loss_list, final_loss_list]))
+    return clean_acc/test_n, acc/test_n
+
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=1024, type=int)
@@ -313,6 +369,7 @@ def get_args():
     parser.add_argument('--ckpt', default='./data/ckpts/cifar10c_3/ssl_contrast_199.pth', type=str)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--allow_adapt', action='store_true')
 
     parser.add_argument('--aug_name', nargs='+', type=str)
     parser.add_argument('--corruption', default='all', type=str)
@@ -502,6 +559,7 @@ def main():
 
     test_set = list(zip(transpose(dataset['test']['data'] / 255.), dataset['test']['labels']))
     print(len(test_set))
+    print(dataset['test']['labels'])
     test_batches = Batches(test_set, args.test_batch, shuffle=False, num_workers=2)
 
 
@@ -527,6 +585,7 @@ def main():
               {'params': no_decay, 'weight_decay': 0}]
 
     learning_rate = args.lr
+    backbone_opt = torch.optim.AdamW(model.parameters(), lr=0.00025)
     opt = torch.optim.Adam(params, lr=learning_rate)
 
     num_training_steps_per_epoch = len(train_set) // args.batch_size
@@ -609,7 +668,10 @@ def main():
                     acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name)
                 else:
                     print('Corruption type: ',  corruption_type[i:i+1][0])
-                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, criterion, attack_iter, args.aug_name)
+                    if args.allow_adapt:
+                        acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name)
+                    else:
+                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, criterion, attack_iter, args.aug_name)
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 

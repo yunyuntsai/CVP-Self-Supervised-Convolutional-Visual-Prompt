@@ -252,11 +252,14 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
 
 
 def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, aug_name, normalize, denormalize):
+    
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
+
     test_n = 0
     clean_acc = 0
     acc = 0
+
     before_loss_list = []
     final_loss_list = []
     correct = []
@@ -339,6 +342,7 @@ def get_args():
     parser.add_argument('--debug', action='store_true')
 
     parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--allow_adapt', action='store_true')
     parser.add_argument('--use_subclass', action='store_true')
     parser.add_argument('--aug_name', default=None, type=str)
     parser.add_argument('--corruption', default='all', type=str)
@@ -695,10 +699,13 @@ def main():
                 print('aug name: ', args.aug_name)
                 print('corruption type: ', corruption_type[i:i+1][0])
                 # acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name, normalize, denormalize)
-                # acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, 
-                #                                     criterion, attack_iter, args.aug_name, normalize, denormalize)
-                acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, 
-                                              criterion, attack_iter, args.aug_name, normalize, denormalize)
+                if args.allow_adapt:
+                    acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, 
+                                        criterion, attack_iter, args.aug_name, normalize, denormalize)
+                else:
+                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, 
+                                        criterion, attack_iter, args.aug_name, normalize, denormalize)
+
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 

@@ -51,10 +51,10 @@ def load_model_and_optimizer(model, optimizer, model_state, optimizer_state):
     optimizer.load_state_dict(optimizer_state)
     return model, optimizer
 
-def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize):
+def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None):
 
     prior_strength = 16
-    tr_num = 4
+    tr_num = 32
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -62,7 +62,11 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize):
         nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
 
     for iteration in range(niter):
-        aug_inputs = [augmix(denormalize(inputs[i]), denormalize) for i in range(batch_size) for _ in range(tr_num)]
+        if denormalize!=None:
+            aug_inputs = [augmix(denormalize(inputs[i]), normalize=True) for i in range(batch_size) for _ in range(tr_num)]
+        else:
+            aug_inputs = [augmix(inputs[i], normalize=False) for i in range(batch_size) for _ in range(tr_num)]
+
         aug_inputs = torch.stack(aug_inputs).cuda()
         optimizer.zero_grad()
         outputs, _ = model(aug_inputs)
@@ -83,11 +87,8 @@ def test_single(model, inputs, label):
 
     with torch.no_grad():
         outputs, _ = model(inputs)
-        # _, predicted = outputs.max(1)
-        # confidence = nn.functional.softmax(outputs, dim=1).squeeze()[predicted].item()
-    # correctness = 1 if predicted.item() == label else 0
-    # print(outputs.max(1)[1])
-    # print(label)
+
     correctness = (outputs.max(1)[1] == label).sum().item()
+
     nn.BatchNorm2d.prior = 1
     return correctness

@@ -17,14 +17,17 @@ from utils import *
 
 ## https://github.com/google-research/augmix
 
-def _augmix_aug(x_orig, denormalize):
+def _augmix_aug(x_orig, normalize=True):
     # x_orig = preaugment(x_orig)
     
     x_orig = Image.fromarray(np.transpose(np.uint8(x_orig.cpu().numpy()*255), (1,2,0)))
     # unique_str = str(uuid.uuid4())[:8]
     # x_orig.save(os.path.join('./output/test_gaussian', unique_str + '.jpg'))
 
-    x_processed = preprocess(x_orig)
+    if normalize:
+        x_processed = preprocess_norm(x_orig)
+    else:
+        x_processed = preprocess(x_orig)
 
     w = np.float32(np.random.dirichlet([1.0, 1.0, 1.0]))
     m = np.float32(np.random.beta(1.0, 1.0))
@@ -34,8 +37,13 @@ def _augmix_aug(x_orig, denormalize):
         x_aug = x_orig.copy()
         for _ in range(np.random.randint(1, 4)):
             x_aug = np.random.choice(augmentations)(x_aug)
-        mix += w[i] * preprocess(x_aug)
+        if normalize:
+            mix += w[i] * preprocess_norm(x_aug)
+        else:
+            mix += w[i] * preprocess(x_aug)
+
     mix = m * x_processed + (1 - m) * mix
+
     return mix
 
 augmix = _augmix_aug
@@ -58,28 +66,32 @@ def solarize(pil_img, level):
     return ImageOps.solarize(pil_img, 256 - level)
 
 def shear_x(pil_img, level):
+    w, h = pil_img.size
     level = float_parameter(rand_lvl(level), 0.3)
     if np.random.uniform() > 0.5:
         level = -level
-    return pil_img.transform((224, 224), Image.AFFINE, (1, level, 0, 0, 1, 0), resample=Image.BILINEAR, fillcolor=128)
+    return pil_img.transform((w, h), Image.AFFINE, (1, level, 0, 0, 1, 0), resample=Image.BILINEAR, fillcolor=128)
 
 def shear_y(pil_img, level):
+    w, h = pil_img.size
     level = float_parameter(rand_lvl(level), 0.3)
     if np.random.uniform() > 0.5:
         level = -level
-    return pil_img.transform((224, 224), Image.AFFINE, (1, 0, 0, level, 1, 0), resample=Image.BILINEAR, fillcolor=128)
+    return pil_img.transform((w, h), Image.AFFINE, (1, 0, 0, level, 1, 0), resample=Image.BILINEAR, fillcolor=128)
 
 def translate_x(pil_img, level):
-    level = int_parameter(rand_lvl(level), 224 / 3)
+    w, h = pil_img.size
+    level = int_parameter(rand_lvl(level), w / 3)
     if np.random.random() > 0.5:
         level = -level
-    return pil_img.transform((224, 224), Image.AFFINE, (1, 0, level, 0, 1, 0), resample=Image.BILINEAR, fillcolor=128)
+    return pil_img.transform((w, h), Image.AFFINE, (1, 0, level, 0, 1, 0), resample=Image.BILINEAR, fillcolor=128)
 
 def translate_y(pil_img, level):
-    level = int_parameter(rand_lvl(level), 224 / 3)
+    w, h = pil_img.size
+    level = int_parameter(rand_lvl(level), w / 3)
     if np.random.random() > 0.5:
         level = -level
-    return pil_img.transform((224, 224), Image.AFFINE, (1, 0, 0, 0, 1, level), resample=Image.BILINEAR, fillcolor=128)
+    return pil_img.transform((w, h), Image.AFFINE, (1, 0, 0, 0, 1, level), resample=Image.BILINEAR, fillcolor=128)
 
 def posterize(pil_img, level):
     level = int_parameter(rand_lvl(level), 4)
@@ -126,9 +138,12 @@ augmentations = [
 
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
-preprocess = transforms.Compose([
+preprocess_norm = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean, std)
+])
+preprocess = transforms.Compose([
+    transforms.ToTensor()
 ])
 preaugment = transforms.Compose([
     transforms.RandomResizedCrop(224),
