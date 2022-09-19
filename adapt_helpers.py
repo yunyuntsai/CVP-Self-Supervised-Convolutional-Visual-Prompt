@@ -66,7 +66,7 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize):
         aug_inputs = torch.stack(aug_inputs).cuda()
         optimizer.zero_grad()
         outputs, _ = model(aug_inputs)
-        print('before adapt:', outputs.max(1)[1])
+        # print('before adapt:', outputs.max(1)[1])
         loss, logits = marginal_entropy(outputs)
         loss.backward()
         optimizer.step()
@@ -86,8 +86,8 @@ def test_single(model, inputs, label):
         # _, predicted = outputs.max(1)
         # confidence = nn.functional.softmax(outputs, dim=1).squeeze()[predicted].item()
     # correctness = 1 if predicted.item() == label else 0
-    print(outputs.max(1)[1])
-    print(label)
+    # print(outputs.max(1)[1])
+    # print(label)
     correctness = (outputs.max(1)[1] == label).sum().item()
     nn.BatchNorm2d.prior = 1
     return correctness
