@@ -559,7 +559,7 @@ def main():
 
     test_set = list(zip(transpose(dataset['test']['data'] / 255.), dataset['test']['labels']))
     print(len(test_set))
-    print(dataset['test']['labels'])
+   
     test_batches = Batches(test_set, args.test_batch, shuffle=False, num_workers=2)
 
 
@@ -645,16 +645,24 @@ def main():
             c_idx = [np.array(corruption_type.index(args.corruption))]
             
         for i in c_idx:
-            orig_x_test = np.load(os.path.join(args.corr_dir , 'original.npy'))
+            # orig_x_test = np.load(os.path.join(args.corr_dir , 'original.npy'))
             if i < 15:
                 x_test = np.load(args.corr_dir + str(corruption_type[i])+'.npy')[severity-1]
+                # y_test = np.load(args.corr_dir + 'labels.npy')[(severity-1)*10000: severity*10000]
+                # x_test = load_cifar10c(15000, severity, args.corr_dir, False, corruption_type[i])
+                print(x_test.shape)
 
-            orig_test_set = list(zip(transpose(orig_x_test / 255.), dataset['test']['labels']))
-            test_set = list(zip(transpose(x_test/ 255.), dataset['test']['labels']))
+            sort_idx = np.argsort(dataset['test']['labels'])
+            test_Y = [dataset['test']['labels'][idx] for idx in sort_idx]
+            test_X = [x_test[idx] for idx in sort_idx]
 
             
-            test_batches_orig = Batches(orig_test_set, args.test_batch, shuffle=False, num_workers=2)
-            test_batches_ood = Batches(test_set, args.test_batch, shuffle=False, num_workers=2)
+            # orig_test_set = list(zip(transpose(orig_x_test / 255.), dataset['test']['labels']))
+            ood_test_set = list(zip(transpose(np.array(test_X)/ 255.), test_Y))
+
+            
+            # test_batches_orig = Batches(orig_test_set, args.test_batch, shuffle=False, num_workers=2)
+            test_batches_ood = Batches(ood_test_set, args.test_batch, shuffle=False, num_workers=2)
 
             trainer = SslTrainer()
    
@@ -675,7 +683,7 @@ def main():
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
-                with open(os.path.join(args.output_dir, 'test_log.csv'), 'a') as f: 
+                with open(os.path.join(args.output_dir, 'cifar10c_adapt+ours_test_log.csv'), 'a') as f: 
                         writer = csv.writer(f)
                         writer.writerow(['l_2 + ', args.aug_name, ' reverse_iter: ', args.attack_iters, ' corruption: ', corruption_type[i:i+1], ' severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
 

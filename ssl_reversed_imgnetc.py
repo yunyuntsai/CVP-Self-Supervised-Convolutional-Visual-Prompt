@@ -88,7 +88,7 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
 
         d = delta
         g = grad
-        print(grad.mean())
+
         x = X
         if norm == "l_inf":
             d = torch.clamp(d + alpha * torch.sign(g), min=-epsilon, max=epsilon)
@@ -300,13 +300,13 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
             # out = out[: , :10]
         # acc += (out.max(1)[1] == y).sum().item()
         # print(new_x.max(), new_x.min())
-        adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize)
-        correctness = test_single(model, new_x, y)
+        adapt_multiple(model, x, opt, 1, y.shape[0], denormalize)
+        correctness = test_single(model, x, y)
         acc += correctness
         #reset model
         model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
-
-        print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+        if i % 1 == 0:
+            print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
     
     
@@ -687,6 +687,7 @@ def main():
 
             if args.use_subclass:
                 test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
+            print(h)
             print('Number of OOD test samples: ', len(test_set))
             test_batches_ood = Batches(test_set, args.test_batch, shuffle=False, num_workers=2)
         
@@ -709,7 +710,7 @@ def main():
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
-                with open(os.path.join(args.output_dir, "test_log.csv"), 'a') as f: 
+                with open(os.path.join(args.output_dir, "imgnet_memo_test_log.csv"), 'a') as f: 
                         writer = csv.writer(f)
                         writer.writerow(['l_2 ', args.aug_name, 'reverse_iter: ', args.attack_iters, 'corruption: ', corruption_type[i:i+1], 'severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
 

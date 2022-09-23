@@ -18,6 +18,9 @@ def marginal_entropy(outputs):
     avg_logits = torch.clamp(avg_logits, min=min_real)
     return -(avg_logits * torch.exp(avg_logits)).sum(dim=-1), avg_logits
 
+def softmax_entropy(outputs):
+    """Entropy of softmax distribution from logits."""
+    return -(outputs.softmax(1) * outputs.log_softmax(1)).sum(1)
 
 # https://github.com/bethgelab/robustness/blob/main/robusta/batchnorm/bn.py#L175
 def _modified_bn_forward(self, input):
@@ -54,7 +57,7 @@ def load_model_and_optimizer(model, optimizer, model_state, optimizer_state):
 def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None):
 
     prior_strength = 16
-    tr_num = 32
+    tr_num = 2
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -71,7 +74,7 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
         optimizer.zero_grad()
         outputs, _ = model(aug_inputs)
         # print('before adapt:', outputs.max(1)[1])
-        loss, logits = marginal_entropy(outputs)
+        loss, _  = marginal_entropy(outputs)
         loss.backward()
         optimizer.step()
     nn.BatchNorm2d.prior = 1
