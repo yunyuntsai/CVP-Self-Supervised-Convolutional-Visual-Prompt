@@ -296,8 +296,11 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
             final_loss_list.append(final_loss)
 
         # adapt_multiple(model, x, opt, 1, y.shape[0], denormalize)
+
+        ## Evaluate baseline TENT
         adapt_multiple_tent(model, x, opt, 1, y.shape[0])
         correctness = test_single(model, x, y)
+
         # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize)
         acc += correctness
         #reset model

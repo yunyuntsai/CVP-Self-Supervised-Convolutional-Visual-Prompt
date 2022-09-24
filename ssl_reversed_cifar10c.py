@@ -28,7 +28,7 @@ from scipy import stats
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
-from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, test_time_augmentation_baseline
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model,  adapt_multiple_tent, test_time_augmentation_baseline
 
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
@@ -341,7 +341,10 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         
         # adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize=None)
         # correctness = test_single(model, new_x, y)
-        correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize=None)
+
+        adapt_multiple_tent(model, x, opt, 1, y.shape[0])
+        correctness = test_single(model, x, y)
+        # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize=None)
         acc += correctness
 
         #reset model
