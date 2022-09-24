@@ -74,3 +74,4 @@ l_2 ,,reverse_iter: ,[1],corruption: ,['contrast'],severity: 5,batch-size: 5,0.1
 l_2 ,,reverse_iter: ,[1],corruption: ,['elastic_transform'],severity: 5,batch-size: 5,0.0752,0.188
 l_2 ,,reverse_iter: ,[1],corruption: ,['pixelate'],severity: 5,batch-size: 5,0.1962,0.4458
 l_2 ,,reverse_iter: ,[1],corruption: ,['jpeg_compression'],severity: 5,batch-size: 5,0.3184,0.5542
+l_2 ,,reverse_iter: ,[1],corruption: ,['gaussian_noise'],severity: 1,batch-size: 16,0.6258,0.6078

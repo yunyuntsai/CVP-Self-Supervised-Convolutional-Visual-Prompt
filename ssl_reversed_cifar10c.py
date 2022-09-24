@@ -28,7 +28,7 @@ from scipy import stats
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
-from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, test_time_augmentation_baseline
 
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
@@ -339,8 +339,9 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
         
-        adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize=None)
-        correctness = test_single(model, new_x, y)
+        # adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize=None)
+        # correctness = test_single(model, new_x, y)
+        correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize=None)
         acc += correctness
 
         #reset model
@@ -683,7 +684,7 @@ def main():
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
-                with open(os.path.join(args.output_dir, 'cifar10c_adapt+ours_test_log.csv'), 'a') as f: 
+                with open(os.path.join(args.output_dir, 'cifar10c_ours_plus_TTA_test_log.csv'), 'a') as f: 
                         writer = csv.writer(f)
                         writer.writerow(['l_2 + ', args.aug_name, ' reverse_iter: ', args.attack_iters, ' corruption: ', corruption_type[i:i+1], ' severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
 

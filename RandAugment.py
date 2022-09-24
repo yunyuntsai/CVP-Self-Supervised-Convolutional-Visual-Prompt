@@ -151,71 +151,26 @@ preaugment = transforms.Compose([
 ])
 
 
-class RandAugment:
-    def __init__(self, n, m):
-        self.n = n
-        self.m = m      # [0, 30]
-        self.augment_list = augment_list()
-
-    def __call__(self, img):
-        #ops = random.choices(self.augment_list, k=self.n)
-        ops = random.choices(self.augment_list, k=16)
-        augment = ops[self.n][0]
-        minval = ops[self.n][1]
-        maxval = ops[self.n][2]
-
-        # for op, minval, maxval in ops:
-        #     val = (float(self.m) / 30) * float(maxval - minval) + minval
-        #     img = op(img, val)
-        #trn1 = transforms.ToPILImage()
-        val = (float(self.m) / 30) * float(maxval - minval) + minval
-        
-        img = augment(img, val)
-
-        return img
 
 def get_transAug_param(aug_name):
     if aug_name == 'contrast':
-        rand_num = 1
         contrast_epsilon = torch.tensor((0.5, 2.5))
-        # contrast_epsilon = torch.tensor((0.1, 3.3))
-        #contrast_epsilon = torch.tensor((0.1, 5))
-        #contrast_epsilon = torch.tensor((0.1, 10))
-        #contrast_epsilon = torch.tensor((0.1, 20)) #0.5 0.9
         return contrast_epsilon
     elif aug_name == 'brightness':
-        rand_num = 1
         brightness_epsilon = torch.tensor((-0.35, 0.3))
-        #brightness_epsilon = torch.tensor((-0.25, 0.6))
         return brightness_epsilon
     elif aug_name == 'hue':
-        rand_num = 1
         hue_epsilon = torch.tensor((-pi/3, pi/3))
         return hue_epsilon
     elif aug_name == 'saturation':
-        rand_num = 1
         sat_epsilon = torch.tensor((0.5, 1))
-        # sat_epsilon = torch.tensor((0.1, 2))
-        return sat_epsilon
     elif aug_name == 'sharpness':
-        sharp_epsilon = torch.tensor((0.5, 3)) 
-        # sharp_epsilon = torch.tensor((0.5, 3)) 
+        sharp_epsilon = torch.tensor((0.5, 1)) 
         return sharp_epsilon
     elif aug_name == 'solarize':
         solar_epsilon = torch.tensor((0.5, 0.7))
         return solar_epsilon
-    elif aug_name == 'equalize':
-        rand_num = 1
-        equal_epsilon = torch.tensor((20, 60))
-        return equal_epsilon
-    elif aug_name == 'pixelate':
-        rand_num = 1
-        pixelate_epsilon = torch.tensor((0.9, 0.6))
-        return pixelate_epsilon
-    elif aug_name == 'gaussian_noise':
-        rand_num = 1
-        gaussian_epsilon = torch.tensor((0.08, 0.38))
-        return gaussian_epsilon
+
 
 def trans_aug_list(aug_list, x, param_list):
 
@@ -235,11 +190,5 @@ def trans_aug(aug_name, data, param):
         return kornia.enhance.adjust_saturation(data, param)
     elif aug_name == 'sharpness':
         return kornia.enhance.sharpness(data, param)
-    elif aug_name == 'solarize':
-        return kornia.enhance.solarize(data, thresholds=param, additions=.1)
-    elif aug_name == 'equalize':
-        return kornia.enhance.equalize_clahe(data, clip_limit=param)
-    elif aug_name == 'pixelate':
-        return apply_pixelate(data, param)
-    elif aug_name == 'gaussian_noise':
-        return apply_pixelate(data, param)
+
+

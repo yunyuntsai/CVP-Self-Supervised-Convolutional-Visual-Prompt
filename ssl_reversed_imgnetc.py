@@ -28,7 +28,7 @@ from scipy import stats
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
-from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_time_augmentation_baseline
 upper_limit, lower_limit = 1, 0
 
 imgnet_mean=(0.485, 0.456, 0.406)
@@ -294,14 +294,11 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
-        
-        # with torch.no_grad():
-        #     out, _ = model(new_x)
-            # out = out[: , :10]
-        # acc += (out.max(1)[1] == y).sum().item()
-        # print(new_x.max(), new_x.min())
-        adapt_multiple(model, x, opt, 1, y.shape[0], denormalize)
+
+        # adapt_multiple(model, x, opt, 1, y.shape[0], denormalize)
+        adapt_multiple_tent(model, x, opt, 1, y.shape[0])
         correctness = test_single(model, x, y)
+        # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize)
         acc += correctness
         #reset model
         model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
@@ -597,7 +594,8 @@ def main():
               {'params': no_decay, 'weight_decay': 0}]
 
     learning_rate = args.lr
-    backbone_opt = torch.optim.AdamW(model.parameters(), lr=0.00025)
+    # backbone_opt = torch.optim.AdamW(model.parameters(), lr=0.00025)
+    backbone_opt = torch.optim.SGD(model.parameters(), lr=0.00025, momentum=0.9)
     ssl_opt = torch.optim.Adam(params, lr=learning_rate)
 
 

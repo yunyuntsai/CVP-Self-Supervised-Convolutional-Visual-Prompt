@@ -72,9 +72,9 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
 
         aug_inputs = torch.stack(aug_inputs).cuda()
         optimizer.zero_grad()
-        outputs, _ = model(aug_inputs)
+        outputs, _ = model(inputs)
         # print('before adapt:', outputs.max(1)[1])
-        loss, _  = marginal_entropy(outputs)
+        loss  = softmax_entropy(outputs).mean(0)
         loss.backward()
         optimizer.step()
     nn.BatchNorm2d.prior = 1
@@ -94,4 +94,56 @@ def test_single(model, inputs, label):
     correctness = (outputs.max(1)[1] == label).sum().item()
 
     nn.BatchNorm2d.prior = 1
+    return correctness
+
+
+
+def adapt_multiple_tent(model, inputs, optimizer, niter, batch_size):
+
+    prior_strength = 16
+
+    if prior_strength < 0:
+        nn.BatchNorm2d.prior = 1
+    else:
+        nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+
+    for iteration in range(niter):
+
+        optimizer.zero_grad()
+        outputs, _ = model(inputs)
+        # print('before adapt:', outputs.max(1)[1])
+        loss  = softmax_entropy(outputs).mean(0)
+        loss.backward()
+        optimizer.step()
+    nn.BatchNorm2d.prior = 1
+
+
+def test_time_augmentation_baseline(model, inputs, batch_size, label, denormalize=None):
+
+    prior_strength = 16
+    niter = 1
+    tr_num = 16
+    if prior_strength < 0:
+        nn.BatchNorm2d.prior = 1
+    else:
+        nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+    for iteration in range(niter):
+
+        if denormalize!=None:
+            aug_inputs = [augmix(denormalize(inputs[i]), normalize=True) for i in range(batch_size) for _ in range(tr_num)]
+        else:
+            aug_inputs = [augmix(inputs[i], normalize=False) for i in range(batch_size) for _ in range(tr_num)]
+        
+        aug_inputs = torch.stack(aug_inputs).cuda()
+        with torch.no_grad():
+            outputs, _ = model(aug_inputs)
+
+    marginal_output = [outputs[i*tr_num: (i+1)*tr_num].mean(0) for i in range(batch_size)]
+    marginal_output = torch.stack(marginal_output)
+    print(marginal_output.max(1)[1])
+
+    correctness = (marginal_output.max(1)[1] == label).sum().item()
+
+    nn.BatchNorm2d.prior = 1
+    
     return correctness
