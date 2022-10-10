@@ -10,6 +10,7 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 from RandAugment import augmix 
 from copy import deepcopy
+from data_utils import *
 
 def marginal_entropy(outputs):
     logits = outputs - outputs.logsumexp(dim=-1, keepdim=True)
@@ -55,9 +56,11 @@ def load_model_and_optimizer(model, optimizer, model_state, optimizer_state):
     return model, optimizer
 
 def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None):
+    
+    imagenet_r_mask = gen_mask()
 
     prior_strength = 16
-    tr_num = 2
+    tr_num = 32
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -73,15 +76,18 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
         aug_inputs = torch.stack(aug_inputs).cuda()
         optimizer.zero_grad()
         outputs, _ = model(inputs)
-        # print('before adapt:', outputs.max(1)[1])
-        loss  = softmax_entropy(outputs).mean(0)
+        outputs = outputs[:, imagenet_r_mask] ##For IMGNET-R, output should be 200 classes
+
+        loss, _ = marginal_entropy(outputs)
         loss.backward()
         optimizer.step()
     nn.BatchNorm2d.prior = 1
 
 def test_single(model, inputs, label):
 
-    prior_strength = 16
+    imagenet_r_mask = gen_mask()
+
+    prior_strength = 32
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -90,6 +96,7 @@ def test_single(model, inputs, label):
 
     with torch.no_grad():
         outputs, _ = model(inputs)
+        outputs = outputs[:, imagenet_r_mask]
 
     correctness = (outputs.max(1)[1] == label).sum().item()
 

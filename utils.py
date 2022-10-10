@@ -14,9 +14,12 @@ import scipy.ndimage as ndi
 import uuid
 import datetime
 import os
+import base64
 import socket
 import math
 import cv2
+from PIL import Image
+import matplotlib.cm as cm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ################################################################
@@ -651,3 +654,93 @@ def cosine_scheduler(base_value, final_value, epochs, niter_per_ep, warmup_epoch
     return schedule
 
 
+def compute_gcam(gcam, bp, orig_images, corrupt_images, reverse_images, 
+                    targets, target_layer, denormalize=True):
+    ##visualize gradcam for one image
+
+    target_class = np.arange(10)
+
+    with torch.cuda.amp.autocast():
+        if targets.item() in target_class:
+            orig_img = orig_images.unsqueeze(0)
+            corr_img = corrupt_images.unsqueeze(0)
+            re_img = reverse_images.unsqueeze(0)
+
+            orig_probs, orig_ids = bp.forward(orig_img)  
+            probs, corr_ids = bp.forward(corr_img)  # sorted
+            re_probs, re_ids = bp.forward(re_img)
+
+            # Remove all the hook function in the "model"
+            bp.remove_hook()
+
+            _ = gcam.forward(orig_img)
+            gcam.backward(ids=orig_ids[:, [0]])
+            orig_regions = gcam.generate(target_layer=target_layer)
+
+            _ = gcam.forward(corr_img)
+            gcam.backward(ids=corr_ids[:, [0]])
+            corr_regions = gcam.generate(target_layer=target_layer)
+
+            _ = gcam.forward(re_img)
+            gcam.backward(ids=re_ids[:, [0]])
+            re_regions = gcam.generate(target_layer=target_layer)
+
+            # if ids[0][0].item() != targets[i].item() and re_ids[0][0].item() == targets[i].item():
+            myuuid = uuid.uuid4()
+            save_gradcam('./output/gradcam/{}-cls-{}-{}.JPEG'.format(str(myuuid).split("-")[0], corr_ids[0][0].item(), re_ids[0][0].item()), 
+                                    orig_regions[0], corr_regions[0], re_regions[0], orig_img, corr_img, re_img, denormalize, False)
+                
+            gcam.remove_hook()
+        torch.cuda.empty_cache()
+
+
+def save_gradcam(filename, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, reverse_image, denormalize=True, paper_cmap=False):
+
+    orig_gcam = orig_gcam.cpu().numpy()
+    if denormalize:
+        orig_img = denormalize(orig_img)
+        corr_image = denormalize(corr_image)
+        reverse_image = denormalize(reverse_image)
+
+    orig_img = np.transpose(orig_img.cpu().detach().numpy(), (0,2,3,1)) * 255.0
+
+    corr_gcam = corr_gcam.cpu().numpy()
+    corr_image = np.transpose(corr_image.cpu().detach().numpy(), (0,2,3,1)) * 255.0
+
+    re_gcam = re_gcam.cpu().numpy()
+    reverse_image = np.transpose(reverse_image.cpu().detach().numpy(), (0,2,3,1)) * 255.0
+    
+    orig_cmap = cm.jet(orig_gcam)[..., :3] * 255.0 
+    corr_cmap = cm.jet(corr_gcam)[..., :3] * 255.0
+    re_cmap = cm.jet(re_gcam)[..., :3] * 255.0
+
+    if paper_cmap:
+        alpha = gcam[..., None]
+        gcam = alpha * cmap + (1 - alpha) * raw_image
+    else:
+        orig_gcam = (orig_cmap.astype(np.float) + orig_img.astype(np.float)) / 2
+        corr_gcam = (corr_cmap.astype(np.float) + corr_image.astype(np.float)) / 2
+        re_gcam = (re_cmap.astype(np.float) + reverse_image.astype(np.float)) / 2
+
+    # cv2.imwrite(filename, Image.fromarray(np.uint8(gcam))).save()
+    fig, ax = plt.subplots(2, 3, figsize=(12, 8))
+    # fig.suptitle("Snow", fontsize=18)
+    plt.setp(ax, xticks=[], yticks=[])
+    ax[0,0].set_title('Original', fontsize=30)
+    ax[0,0].set_ylabel("Input", fontsize=30)
+    ax[0,0].imshow(np.uint8(orig_img[0]))
+    ax[1,0].set_ylabel("Grad-CAM", fontsize=30)
+    ax[1,0].imshow(np.uint8(orig_gcam[0]))
+    # ax[0,1].set_ylabel("corrupted input", fontsize=16)
+    ax[0,1].set_title('Corrupted', fontsize=30)
+    ax[0,1].imshow(np.uint8(corr_image[0]))
+    ax[1,1].imshow(np.uint8(corr_gcam[0]))
+    # ax[0,2].set_ylabel("recalibrated input", fontsize=16)
+    ax[0,2].set_title('Adapted', fontsize=30)
+    ax[0,2].imshow(np.uint8(reverse_image[0]))
+    ax[1,2].imshow(np.uint8(re_gcam[0]))
+    
+    # im = Image.fromarray(np.uint8(gcam[0]))
+    print('save figs to {}'.format(filename))
+    fig.tight_layout()
+    fig.savefig(filename, dpi=300)

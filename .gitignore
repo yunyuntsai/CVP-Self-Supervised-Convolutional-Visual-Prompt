@@ -1,3 +1,6 @@
 *.log
+.ipynb_checkpoints/
 output/
+loss_histogram/
+data/
 __pycache__

@@ -29,7 +29,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
 from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model,  adapt_multiple_tent, test_time_augmentation_baseline
-
+from grad_cam import GradCAM, save_gradcam, BackPropagation
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -125,6 +125,7 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
         raise ValueError
     #delta = clamp(delta, lower_limit - torch.mean(X, dim=0), upper_limit - torch.mean(X, dim=0))
     delta.requires_grad = True
+    print(delta)
     for _ in range(attack_iters):
 
         new_x = X + delta
@@ -255,7 +256,7 @@ def test_acc(model, test_batches):
     print('Accuracy before SSL training: {}'.format(acc / (100 * len(test_batches))))
 
 
-def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_iters, aug_name):
+def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, criterion, attack_iters, aug_name, allow_gcam):
 
     acc = 0
     epsilon = (8 / 255.)
@@ -266,10 +267,14 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
     before_loss_list = []
     final_loss_list = []
 
+    raw_dataloader_iterater = iter(test_batches_orig)
+
     for i, batch in enumerate(test_batches):
         x, y = batch['input'], batch['target']
         test_n += y.shape[0]
 
+        orig_batch = next(raw_dataloader_iterater)
+        orig_x = orig_batch['input']
 
         clean_out, _ = model(x)
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
@@ -290,12 +295,21 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
 
+        if allow_gcam:
+            for i in range(x.shape[0]):
+                if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
+                    target_layer = 'block3.layer.3'
+                    bp = BackPropagation(model=model)
+                    gcam = GradCAM(model=model) ##initialize grad_cam funciton
+                    compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize=False)
+
         acc += (out.max(1)[1] == y).sum().item()
         print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+
+    with open('./loss_histogram/cifar10c_fog_s1.npy', 'wb') as f:
+        np.save(f, np.array([before_loss_list, final_loss_list]))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
 
-    # with open('./loss_histogram/cifar10c_orig.npy', 'wb') as f:
-    #     np.save(f, np.array([before_loss_list, final_loss_list]))
     return clean_acc/test_n, acc/test_n
 
 
@@ -374,7 +388,7 @@ def get_args():
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--allow_adapt', action='store_true')
-
+    parser.add_argument('--allow_gcam', action='store_true')
     parser.add_argument('--aug_name', nargs='+', type=str)
     parser.add_argument('--corruption', default='all', type=str)
     parser.add_argument('--severity', default=1, type=int)
@@ -609,6 +623,8 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.md_path))
     model = model.eval().cuda() 
+    for name, module in model.named_modules():
+        print(name)
 
     restart_epoch = 0
     if os.path.exists(args.ckpt):
@@ -649,7 +665,7 @@ def main():
             c_idx = [np.array(corruption_type.index(args.corruption))]
             
         for i in c_idx:
-            # orig_x_test = np.load(os.path.join(args.corr_dir , 'original.npy'))
+            orig_x_test = np.load(os.path.join(args.corr_dir , 'original.npy'))
             if i < 15:
                 x_test = np.load(args.corr_dir + str(corruption_type[i])+'.npy')[severity-1]
                 # y_test = np.load(args.corr_dir + 'labels.npy')[(severity-1)*10000: severity*10000]
@@ -659,13 +675,14 @@ def main():
             sort_idx = np.argsort(dataset['test']['labels'])
             test_Y = [dataset['test']['labels'][idx] for idx in sort_idx]
             test_X = [x_test[idx] for idx in sort_idx]
+            Orig_test_X = [orig_x_test[idx] for idx in sort_idx]
 
             
-            # orig_test_set = list(zip(transpose(orig_x_test / 255.), dataset['test']['labels']))
+            orig_test_set = list(zip(transpose(np.array(Orig_test_X)/ 255.), test_Y))
             ood_test_set = list(zip(transpose(np.array(test_X)/ 255.), test_Y))
 
             
-            # test_batches_orig = Batches(orig_test_set, args.test_batch, shuffle=False, num_workers=2)
+            test_batches_orig = Batches(orig_test_set, args.test_batch, shuffle=False, num_workers=2)
             test_batches_ood = Batches(ood_test_set, args.test_batch, shuffle=False, num_workers=2)
 
             trainer = SslTrainer()
@@ -677,13 +694,13 @@ def main():
 
                 if corruption_type[i:i+1][0] == 'orig':
                     print('No corruption type')
-                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name)
+                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name, args.allow_gcam)
                 else:
                     print('Corruption type: ',  corruption_type[i:i+1][0])
                     if args.allow_adapt:
                         acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name)
                     else:
-                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, criterion, attack_iter, args.aug_name)
+                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, test_batches_orig, criterion, attack_iter, args.aug_name, args.allow_gcam)
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 

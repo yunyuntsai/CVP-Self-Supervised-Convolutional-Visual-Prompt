@@ -29,8 +29,9 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
 from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_time_augmentation_baseline
-upper_limit, lower_limit = 1, 0
+from grad_cam import GradCAM, save_gradcam, BackPropagation
 
+upper_limit, lower_limit = 1, 0
 imgnet_mean=(0.485, 0.456, 0.406)
 imgnet_std=(0.229, 0.224, 0.225)
 
@@ -199,7 +200,7 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         return max_delta, max_param, before_loss.item(), final_loss
    
                
-def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_iters, aug_name, normalize, denormalize):
+def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, criterion, attack_iters, aug_name, normalize, denormalize, allow_gcam):
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
     test_n = 0
@@ -208,19 +209,19 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
     before_loss_list = []
     final_loss_list = []
 
-    # downscaling = DownScale_Transform(size)
-
+    raw_dataloader_iterater = iter(test_batches_orig)
+    
     for i, batch in enumerate(test_batches):
 
         x, y = batch['input'], batch['target']
-
-        # x = downscaling(x)
         test_n += y.shape[0]
+
+        orig_batch = next(raw_dataloader_iterater)
+        orig_x = orig_batch['input']
 
         with torch.no_grad():
             clean_out, _ = model(x)
 
-        # clean_out = clean_out[: , :10]
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
         if aug_name is None:
@@ -232,17 +233,23 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
             delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_2', aug_name,  denormalize, normalize)
             param_all = param.repeat(x.shape[0])
-            # print(delta.shape)
-            # print(param)
-            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
-        
 
-            before_loss_list.append(before_loss)
-            final_loss_list.append(final_loss)
-        
+            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
+                
         with torch.no_grad():
             out, _ = model(new_x)
-            # out = out[: , :10]
+
+        if allow_gcam:
+            for i in range(x.shape[0]):
+                if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
+                    target_layer = 'layer4.2'
+                    bp = BackPropagation(model=model)
+                    gcam = GradCAM(model=model) ##initialize grad_cam funciton
+                    compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize)
+
+            # before_loss_list.append(before_loss)
+            # final_loss_list.append(final_loss)
+
         acc += (out.max(1)[1] == y).sum().item()
         print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
@@ -343,6 +350,7 @@ def get_args():
 
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--allow_adapt', action='store_true')
+    parser.add_argument('--allow_gcam', action='store_true')
     parser.add_argument('--use_subclass', action='store_true')
     parser.add_argument('--aug_name', default=None, type=str)
     parser.add_argument('--corruption', default='all', type=str)
@@ -676,7 +684,7 @@ def main():
                 # if len(x_test) > 5000:
                 #     subset_xtest = x_test[idx]         
             else:
-                x_test = np.load('./data/' + 'original.npy')
+                x_test = np.load(args.corr_dir + 'original.npy')
                 print(x_test.shape)
                 print('load original.npy')
 
@@ -705,13 +713,13 @@ def main():
                     acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, 
                                         criterion, attack_iter, args.aug_name, normalize, denormalize)
                 else:
-                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, 
-                                        criterion, attack_iter, args.aug_name, normalize, denormalize)
+                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, test_batches_orig,
+                                        criterion, attack_iter, args.aug_name, normalize, denormalize, args.allow_gcam)
 
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
-                with open(os.path.join(args.output_dir, "imgnet_memo_test_log.csv"), 'a') as f: 
+                with open(os.path.join(args.output_dir, "imgnet_TENT_test_log.csv"), 'a') as f: 
                         writer = csv.writer(f)
                         writer.writerow(['l_2 ', args.aug_name, 'reverse_iter: ', args.attack_iters, 'corruption: ', corruption_type[i:i+1], 'severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
 
