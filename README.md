@@ -37,6 +37,14 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_ba
 --data-dir ../ImageNet-Data/ --corr-dir ./data/ImageNetC-customize/ --md_path ./resnet50.pth  --ckpt ./data/ckpts/imagenetc_ssl/ssl_contrast_best.pth  
 --corruption {corruption type}  --severity {severity level 1 --> 5} --aug_name sharpness --attack_iters 1 --output_dir output/{test_log save path}
 ```
+
+- To reverse ImageNet-R/S at Testing phase, run following line
+```
+CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetR.py --batch-size 32 --test_batch 5  --eval \\
+--data-dir ../ImageNet-Data/  --md_path ./resnet50.pth  --ckpt ./data/ckpts/imagenetc_ssl/ssl_contrast_best.pth  
+--aug_name sharpness --attack_iters 1 --allow_adapt(optional)
+```
+
 - To run reverse + adaptation at Testing phase, add argument --allow_adapt
 ```
 CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_batch 5 --eval --allow_adapt\\
