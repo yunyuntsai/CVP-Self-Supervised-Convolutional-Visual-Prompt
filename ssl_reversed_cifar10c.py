@@ -125,7 +125,7 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
         raise ValueError
     #delta = clamp(delta, lower_limit - torch.mean(X, dim=0), upper_limit - torch.mean(X, dim=0))
     delta.requires_grad = True
-    print(delta)
+
     for _ in range(attack_iters):
 
         new_x = X + delta
@@ -356,13 +356,17 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         # adapt_multiple(model, new_x, opt, 1, y.shape[0], denormalize=None)
         # correctness = test_single(model, new_x, y)
 
-        adapt_multiple_tent(model, x, opt, 1, y.shape[0])
-        correctness = test_single(model, x, y)
+        # adapt_multiple_tent(model, x, opt, 1, y.shape[0])
         # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize=None)
-        acc += correctness
+        for i in range(x.shape[0]):
+            adapt_x = x[i].unsqueeze(0)
+            
+            adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize)
+            correctness = test_single(model, adapt_x, y[i])
+            acc += correctness
 
-        #reset model
-        model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
+            #reset model
+            model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
 
         print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
@@ -665,24 +669,24 @@ def main():
             c_idx = [np.array(corruption_type.index(args.corruption))]
             
         for i in c_idx:
-            orig_x_test = np.load(os.path.join(args.corr_dir , 'original.npy'))
+            # orig_x_test = np.load(os.path.join(args.corr_dir , 'original.npy'))
             if i < 15:
-                x_test = np.load(args.corr_dir + str(corruption_type[i])+'.npy')[severity-1]
-                # y_test = np.load(args.corr_dir + 'labels.npy')[(severity-1)*10000: severity*10000]
+                x_test = np.load(args.corr_dir + str(corruption_type[i])+'.npy')[(severity-1)*10000: severity*10000]
+                y_test = np.load(args.corr_dir + 'labels.npy')[(severity-1)*10000: severity*10000]
                 # x_test = load_cifar10c(15000, severity, args.corr_dir, False, corruption_type[i])
                 print(x_test.shape)
 
-            sort_idx = np.argsort(dataset['test']['labels'])
-            test_Y = [dataset['test']['labels'][idx] for idx in sort_idx]
-            test_X = [x_test[idx] for idx in sort_idx]
-            Orig_test_X = [orig_x_test[idx] for idx in sort_idx]
+            # sort_idx = np.argsort(dataset['test']['labels'])
+            # test_Y = [dataset['test']['labels'][idx] for idx in sort_idx]
+            # test_X = [x_test[idx] for idx in sort_idx]
+            # Orig_test_X = [orig_x_test[idx] for idx in sort_idx]
 
             
-            orig_test_set = list(zip(transpose(np.array(Orig_test_X)/ 255.), test_Y))
-            ood_test_set = list(zip(transpose(np.array(test_X)/ 255.), test_Y))
+            # orig_test_set = list(zip(transpose(orig_x_test/ 255.), dataset['test']['labels']))
+            ood_test_set = list(zip(transpose(x_test/ 255.), y_test))
 
             
-            test_batches_orig = Batches(orig_test_set, args.test_batch, shuffle=False, num_workers=2)
+            # test_batches_orig = Batches(orig_test_set, args.test_batch, shuffle=False, num_workers=2)
             test_batches_ood = Batches(ood_test_set, args.test_batch, shuffle=False, num_workers=2)
 
             trainer = SslTrainer()
@@ -694,13 +698,13 @@ def main():
 
                 if corruption_type[i:i+1][0] == 'orig':
                     print('No corruption type')
-                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name, args.allow_gcam)
+                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches, criterion, attack_iter, args.aug_name, args.allow_gcam)
                 else:
                     print('Corruption type: ',  corruption_type[i:i+1][0])
                     if args.allow_adapt:
                         acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name)
                     else:
-                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, test_batches_orig, criterion, attack_iter, args.aug_name, args.allow_gcam)
+                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name, args.allow_gcam)
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
