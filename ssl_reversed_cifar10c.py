@@ -256,7 +256,7 @@ def test_acc(model, test_batches):
     print('Accuracy before SSL training: {}'.format(acc / (100 * len(test_batches))))
 
 
-def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, criterion, attack_iters, aug_name, allow_gcam):
+def test_acc_reverse_vector(model, model_ssl, test_batches_orig, test_batches_ood, criterion, attack_iters, args):
 
     acc = 0
     epsilon = (8 / 255.)
@@ -268,8 +268,10 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, c
     final_loss_list = []
 
     raw_dataloader_iterater = iter(test_batches_orig)
+    aug_name = args.aug_name
+    allow_gcam = args.allow_gcam
 
-    for i, batch in enumerate(test_batches):
+    for i, batch in enumerate(test_batches_ood):
         x, y = batch['input'], batch['target']
         test_n += y.shape[0]
 
@@ -361,7 +363,7 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         for i in range(x.shape[0]):
             adapt_x = x[i].unsqueeze(0)
             
-            adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize)
+            adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize=None)
             correctness = test_single(model, adapt_x, y[i])
             acc += correctness
 
@@ -698,17 +700,17 @@ def main():
 
                 if corruption_type[i:i+1][0] == 'orig':
                     print('No corruption type')
-                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches, criterion, attack_iter, args.aug_name, args.allow_gcam)
+                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches, test_batches_ood, criterion, attack_iter, args)
                 else:
                     print('Corruption type: ',  corruption_type[i:i+1][0])
                     if args.allow_adapt:
                         acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name)
                     else:
-                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name, args.allow_gcam)
+                        acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches, test_batches_ood, criterion, attack_iter, args)
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
-                with open(os.path.join(args.output_dir, 'cifar10c_ours_plus_TTA_test_log.csv'), 'a') as f: 
+                with open(os.path.join(args.output_dir, 'cifar10C_ours_test_log.csv'), 'a') as f: 
                         writer = csv.writer(f)
                         writer.writerow(['l_2 + ', args.aug_name, ' reverse_iter: ', args.attack_iters, ' corruption: ', corruption_type[i:i+1], ' severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
 
