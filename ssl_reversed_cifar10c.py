@@ -15,8 +15,7 @@ import torch
 from tqdm import tqdm
 import torch.nn as nn
 from timm.data.mixup import Mixup
-
-from learning.wideresnet import WRN34_rot_out_branch,WRN34_rot_out_branch2
+from learning.wideresnet import WideResNet, WRN34_rot_out_branch,WRN34_rot_out_branch2
 from utils import *
 import torchvision.transforms as transforms
 import torch.nn.functional as F
@@ -30,6 +29,7 @@ from sklearn.metrics import roc_curve
 from matplotlib import pyplot
 from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model,  adapt_multiple_tent, test_time_augmentation_baseline
 from grad_cam import GradCAM, save_gradcam, BackPropagation
+import tent_adapt_helper as tent
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -360,8 +360,8 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
 
         # adapt_multiple_tent(model, x, opt, 1, y.shape[0])
         # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize=None)
-        for i in range(x.shape[0]):
-            adapt_x = x[i].unsqueeze(0)
+        for i in range(new_x.shape[0]):
+            adapt_x = new_x[i].unsqueeze(0)
             
             adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize=None)
             correctness = test_single(model, adapt_x, y[i])
@@ -377,6 +377,60 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
     #     np.save(f, np.array([before_loss_list, final_loss_list]))
     return clean_acc/test_n, acc/test_n
 
+def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches, criterion, attack_iters, aug_name):
+    
+    epsilon = (16 / 255.)
+    pgd_alpha = (4 / 255.)
+
+    test_n = 0
+    clean_acc = 0
+    acc = 0
+
+    before_loss_list = []
+    final_loss_list = []
+    correct = []
+
+    old_model_state, old_opt = copy_model_and_optimizer(base_model, opt)
+    old_backbone_model = WideResNet(depth=28, num_classes=10, widen_factor=10)
+    old_backbone_model.cuda().eval()
+    load_model_and_optimizer(old_backbone_model, opt, old_model_state, old_opt)
+    tent_model = tent.setup_tent(base_model)
+    for i, batch in enumerate(test_batches):
+
+        x, y = batch['input'], batch['target']
+        test_n += y.shape[0]
+        with torch.no_grad():
+            clean_out, _ = old_backbone_model(x)
+        # print(clean_out.shape)
+        # clean_out = clean_out[: , :10]
+        clean_acc += (clean_out.max(1)[1] == y).sum().item()
+
+        # if aug_name is None:
+        #     delta = compute_reverse_attack(base_model, model_ssl, criterion, x,
+        #                                             epsilon, pgd_alpha, attack_iters, 'l_2')
+        #     new_x = x + delta
+        # else: 
+        #     delta, param, before_loss, final_loss = compute_reverse_transformation(base_model, model_ssl, criterion, x,
+        #                                             epsilon, pgd_alpha, attack_iters, 'l_2', aug_name)
+        #     param_all = param.repeat(x.shape[0])
+
+        #     new_x = trans_aug(aug_name[0], x, param_all)  + delta
+            
+        #     before_loss_list.append(before_loss)
+        #     final_loss_list.append(final_loss)
+        
+        ## adapt with baseline TENT
+        print('adapt with tent!!')
+        out = tent_model(x)
+        acc += (out.max(1)[1] == y).sum().item()
+
+        #reset model
+
+        if i % 1 == 0:
+            print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n,  acc/test_n))
+    print('Accuracy after SSL training: {}'.format(acc / test_n))
+    
+    return  acc/test_n
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -386,14 +440,14 @@ def get_args():
     parser.add_argument('--save_freq', default=1, type=int)
     parser.add_argument('--data-dir', default='../cifar-data', type=str)
     parser.add_argument('--corr-dir', default='./data/CIFAR-10-C-customize/', type=str)
-    parser.add_argument('--output_dir', default='./output/', type=str)
+    parser.add_argument('--output_dir', default='./train_ssl/', type=str)
     parser.add_argument('--save_root_path', default='data/ckpts/', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--md_path', default='./cifar10_standard.pth', type=str)
     parser.add_argument('--ckpt', default='./data/ckpts/cifar10c_3/ssl_contrast_199.pth', type=str)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--eval', action='store_true')
-    parser.add_argument('--allow_adapt', action='store_true')
+    parser.add_argument('--allow_adapt', default='', type=str)
     parser.add_argument('--allow_gcam', action='store_true')
     parser.add_argument('--aug_name', nargs='+', type=str)
     parser.add_argument('--corruption', default='all', type=str)
@@ -703,8 +757,10 @@ def main():
                     acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches, test_batches_ood, criterion, attack_iter, args)
                 else:
                     print('Corruption type: ',  corruption_type[i:i+1][0])
-                    if args.allow_adapt:
+                    if args.allow_adapt == 'memo':
                         acc1, acc2 = test_acc_reverse_vector_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name)
+                    elif args.allow_adapt == 'tent':
+                        acc1, acc2 = test_acc_reverse_vector_tent_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name)
                     else:
                         acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches, test_batches_ood, criterion, attack_iter, args)
 

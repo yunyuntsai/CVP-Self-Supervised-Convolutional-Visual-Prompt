@@ -369,15 +369,20 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         ## Evaluate baseline TTA
         # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize)
 
-        ## Evaluate baseline MEMO
-        for i in range(new_x.shape[0]):
-            adapt_x = new_x[i].unsqueeze(0)
+        ## Evaluate baseline MEMO-single
+        for i in range(x.shape[0]):
+            adapt_x = x[i].unsqueeze(0)
             
             adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize)
-
             correctness = test_single(model, adapt_x, y[i])
-
             acc += correctness
+
+
+        ## Evaluate baseline MEMO-batch
+        # adapt_multiple(model, x, opt, 1, new_x.shape[0], denormalize)
+        # correctness = test_single(model, x, y)
+        # acc += correctness
+
         ## reset model
         model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
         if i % 1 == 0:
@@ -703,9 +708,9 @@ def main():
             for attack_iter in attack_iters:
                 # acc1, acc2, reverse_loss_list, corr_loss_list = test_acc_reverse_vector_aug(model, dist_head, test_batches_ood, rot_transform, criterion, 0,  args.aug_name, normalize, denormalize, imagenet_r_mask)
                 if args.allow_adapt:
-                    test_acc_reverse_vector_adapt(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)
+                    acc2, acc1 = test_acc_reverse_vector_adapt(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)
                 else:
-                    test_acc_reverse_vector(model, contrast_head, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)
+                    acc2, acc1 = test_acc_reverse_vector(model, contrast_head, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)
                 # print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc2, acc1))
 
                 with open('./output/imagenetR_test_log.csv', 'a') as f: 

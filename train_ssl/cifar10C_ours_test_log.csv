@@ -1,0 +1,15 @@
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.7778,0.8046
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['shot_noise'], severity: 1,batch-size: 16,0.8504,0.8615
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['impulse_noise'], severity: 1,batch-size: 16,0.8289,0.8455
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['defocus_blur'], severity: 1,batch-size: 16,0.9458,0.9438
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['motion_blur'], severity: 1,batch-size: 16,0.9029,0.8984
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['glass_blur'], severity: 1,batch-size: 16,0.5343,0.5597
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['zoom_blur'], severity: 1,batch-size: 16,0.8771,0.8686
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['snow'], severity: 1,batch-size: 16,0.8991,0.9006
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['frost'], severity: 1,batch-size: 16,0.8955,0.8978
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['fog'], severity: 1,batch-size: 16,0.9451,0.9438
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['brightness'], severity: 1,batch-size: 16,0.9475,0.9464
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['contrast'], severity: 1,batch-size: 16,0.9427,0.941
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['elastic_transform'], severity: 1,batch-size: 16,0.9047,0.9002
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['pixelate'], severity: 1,batch-size: 16,0.9195,0.9245
+l_2 + ,['sharpness'], reverse_iter: ,5, corruption: ,['jpeg_compression'], severity: 1,batch-size: 16,0.8636,0.8653

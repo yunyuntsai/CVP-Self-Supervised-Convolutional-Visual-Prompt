@@ -370,8 +370,8 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         # correctness = test_time_augmentation_baseline(model, new_x, y.shape[0], y, denormalize)
 
         ## Evaluate baseline MEMO
-        for i in range(new_x.shape[0]):
-            adapt_x = new_x[i].unsqueeze(0)
+        for i in range(x.shape[0]):
+            adapt_x = x[i].unsqueeze(0)
             
             adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize)
 
@@ -382,8 +382,10 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
         if i % 1 == 0:
             print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
-    print('Accuracy after SSL training: {}'.format(acc / test_n))
-    
+        if i % 1000 == 0:
+            with open('./output/imagenetS_test_log.csv', 'a') as f: 
+                writer = csv.writer(f)
+                writer.writerow(['batch-size: ', str(test_n), 'before reverse: ', clean_acc/test_n, 'after reverse: ', acc/test_n])
     
     return clean_acc/test_n, acc/test_n
 
@@ -708,7 +710,7 @@ def main():
                     acc2, acc1 = test_acc_reverse_vector(model, contrast_head, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)
                 # print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc2, acc1))
 
-                with open('./output/imagenetR_test_log.csv', 'a') as f: 
+                with open('./output/imagenetS_test_log.csv', 'a') as f: 
                         writer = csv.writer(f)
                         writer.writerow(['batch-size: ', str(args.test_batch), 'before reverse: ', acc2, 'after reverse: ', acc1])
         

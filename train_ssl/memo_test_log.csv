@@ -1,4 +1,0 @@
-l_2 ,,reverse_iter: ,[1],corruption: ,['gaussian_noise'],severity: 1,batch-size: 5,0.6258,0.8086
-l_2 ,,reverse_iter: ,[1],corruption: ,['gaussian_noise'],severity: 1,batch-size: 1,0.6258,0.634
-l_2 ,,reverse_iter: ,[1],corruption: ,['shot_noise'],severity: 1,batch-size: 1,0.5978,0.614
-l_2 ,,reverse_iter: ,[1],corruption: ,['impulse_noise'],severity: 1,batch-size: 1,0.5234,0.5614

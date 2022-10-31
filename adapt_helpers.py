@@ -19,6 +19,16 @@ def marginal_entropy(outputs):
     avg_logits = torch.clamp(avg_logits, min=min_real)
     return -(avg_logits * torch.exp(avg_logits)).sum(dim=-1), avg_logits
 
+def marginal_entropy_batch(outputs, b_size):
+    logits = outputs - outputs.logsumexp(dim=-1, keepdim=True)
+    aug_size = logits.shape[0]//b_size
+    avg_logits = [logits[i*aug_size:(i+1)*aug_size].logsumexp(dim=0) - np.log(logits[i*aug_size:(i+1)*aug_size].shape[0]) for i in range(b_size)]
+    avg_logits = torch.vstack(avg_logits)
+    min_real = torch.finfo(avg_logits.dtype).min
+    avg_logits = torch.clamp(avg_logits, min=min_real)
+    loss = -(avg_logits * torch.exp(avg_logits)).sum(dim=-1)
+    return loss.mean(0), avg_logits
+
 def softmax_entropy(outputs):
     """Entropy of softmax distribution from logits."""
     return -(outputs.softmax(1) * outputs.log_softmax(1)).sum(1)
@@ -60,13 +70,12 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
     imagenet_r_mask = gen_mask()
 
     prior_strength = 16
-    tr_num = 32
+    tr_num = 4
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
     else:
         nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
-
     for iteration in range(niter):
         if denormalize!=None:
             aug_inputs = [augmix(denormalize(inputs[i]), normalize=True) for i in range(batch_size) for _ in range(tr_num)]
@@ -75,9 +84,8 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
 
         aug_inputs = torch.stack(aug_inputs).cuda()
         optimizer.zero_grad()
-        outputs, _ = model(inputs)
-        outputs = outputs[:, imagenet_r_mask] ##For IMGNET-R, output should be 200 classes
-
+        outputs, _ = model(aug_inputs)
+        # outputs = outputs[:, imagenet_r_mask] ##For IMGNET-R, output should be 200 classes
         loss, _ = marginal_entropy(outputs)
         loss.backward()
         optimizer.step()
@@ -96,8 +104,9 @@ def test_single(model, inputs, label):
 
     with torch.no_grad():
         outputs, _ = model(inputs)
-        outputs = outputs[:, imagenet_r_mask]
-
+        # print(outputs.max(1)[1])
+        # outputs = outputs[:, imagenet_r_mask]
+    # print(label)
     correctness = (outputs.max(1)[1] == label).sum().item()
 
     nn.BatchNorm2d.prior = 1

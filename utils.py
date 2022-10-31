@@ -396,6 +396,26 @@ def imagenet1000():
 
     return train_set, test_set
 
+
+def load_imagenetC(corruption, severity):
+
+    if 'thor' in socket.gethostname():
+        data_dir='/local/rcs/yunyun/ImageNet-C'
+    
+    imgnet_mean=(0.485, 0.456, 0.406)
+    imgnet_std=(0.229, 0.224, 0.225)
+
+    corruption_dir = os.path.join(os.path.join(data_dir, corruption), str(severity))
+
+    dataset = datasets.ImageFolder(
+            corruption_dir,
+            transforms.Compose([
+                transforms.Resize(256), transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(imgnet_mean, imgnet_std),]))
+
+    return dataset
+
 def load_imagenetR():
 
     if 'thor' in socket.gethostname():
