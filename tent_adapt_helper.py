@@ -54,7 +54,7 @@ def forward_and_adapt(x, model, optimizer):
     Measure entropy of the model prediction, take gradients, and update params.
     """
     # forward
-    outputs, _ = model(x)
+    outputs = model(x)
     # adapt
     loss = softmax_entropy(outputs).mean(0)
     loss.backward()
@@ -147,7 +147,7 @@ def setup_tent(model):
     optimizer = setup_optimizer(params)
     tent_model = Tent(model, optimizer,
                            steps=1,
-                           episodic=False)
+                           episodic=True)
     logger.info(f"model for adaptation: %s", model)
     logger.info(f"params for adaptation: %s", param_names)
     logger.info(f"optimizer for adaptation: %s", optimizer)

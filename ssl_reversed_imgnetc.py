@@ -15,13 +15,14 @@ from sklearn.random_projection import johnson_lindenstrauss_min_dim
 import torch
 from tqdm import tqdm
 import torch.nn as nn
-
+from learning.resnet import resnet50
 from learning.wideresnet import WRN34_rot_out_branch,WRN34_rot_out_branch2
 from utils import *
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from RandAugment import trans_aug, get_transAug_param
 from robustbench.utils import load_model
+from robustbench.model_zoo.enums import ThreatModel
 from robustbench.data import load_cifar10c
 import kornia
 from scipy import stats
@@ -31,6 +32,10 @@ from matplotlib import pyplot
 from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_time_augmentation_baseline
 from tent_adapt_helper import setup_tent
 from grad_cam import GradCAM, save_gradcam, BackPropagation
+import tent_adapt_helper as tent
+import norm_adapt_helper as norm
+
+
 
 upper_limit, lower_limit = 1, 0
 imgnet_mean=(0.485, 0.456, 0.406)
@@ -201,7 +206,7 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         return max_delta, max_param, before_loss.item(), final_loss
    
                
-def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, criterion, attack_iters, aug_name, normalize, denormalize, allow_gcam):
+def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_iters, aug_name, normalize, denormalize, allow_gcam):
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
     test_n = 0
@@ -210,15 +215,15 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, c
     before_loss_list = []
     final_loss_list = []
 
-    raw_dataloader_iterater = iter(test_batches_orig)
+    # raw_dataloader_iterater = iter(test_batches_orig)
     
     for i, batch in enumerate(test_batches):
 
         x, y = batch['input'], batch['target']
         test_n += y.shape[0]
 
-        orig_batch = next(raw_dataloader_iterater)
-        orig_x = orig_batch['input']
+        # orig_batch = next(raw_dataloader_iterater)
+        # orig_x = orig_batch['input']
 
         with torch.no_grad():
             clean_out, _ = model(x)
@@ -240,13 +245,13 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, c
         with torch.no_grad():
             out, _ = model(new_x)
 
-        if allow_gcam:
-            for i in range(x.shape[0]):
-                if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
-                    target_layer = 'layer4.2'
-                    bp = BackPropagation(model=model)
-                    gcam = GradCAM(model=model) ##initialize grad_cam funciton
-                    compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize)
+        # if allow_gcam:
+        #     for i in range(x.shape[0]):
+        #         if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
+        #             target_layer = 'layer4.2'
+        #             bp = BackPropagation(model=model)
+        #             gcam = GradCAM(model=model) ##initialize grad_cam funciton
+        #             compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize)
 
             # before_loss_list.append(before_loss)
             # final_loss_list.append(final_loss)
@@ -259,7 +264,7 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, test_batches_orig, c
     return clean_acc/test_n, acc/test_n
 
 
-def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, aug_name, normalize, denormalize):
+def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, args, normalize, denormalize):
     
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
@@ -287,26 +292,31 @@ def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, crit
         # clean_out = clean_out[: , :10]
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
-        if aug_name is None:
+        if args.aug_name is None:
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_inf')
             new_x = x + delta
 
         else: 
+            aug_name = args.aug_name
             delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_2', aug_name,  denormalize, normalize)
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize)
             param_all = param.repeat(x.shape[0])
             # print(delta.shape)
             # print(param)
-            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
+            new_x = normalize(trans_aug(args.aug_name, denormalize(x), param_all))  + delta
         
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
 
+        if args.adapt_only:
+            print('adapt_only!!')
+            new_x = x
+
         # adapt_multiple(model, x, opt, 1, y.shape[0], denormalize)
         ## Evaluate baseline MEMO-single
-        for i in range(x.shape[0]):
-            adapt_x = x[i].unsqueeze(0)
+        for i in range(new_x.shape[0]):
+            adapt_x = new_x[i].unsqueeze(0)
             
             adapt_multiple(model, adapt_x, opt, 1, adapt_x.shape[0], denormalize)
             correctness = test_single(model, adapt_x, y[i])
@@ -328,7 +338,7 @@ def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, crit
     return clean_acc/test_n, acc/test_n
 
 
-def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, test_batches, criterion, attack_iters, aug_name, normalize, denormalize):
+def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches, criterion, attack_iters, args, normalize, denormalize):
     
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
@@ -340,37 +350,52 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, test_batches, crit
     before_loss_list = []
     final_loss_list = []
     correct = []
-    tent_model = setup_tent(base_model)
+
+    old_model_state, old_opt = copy_model_and_optimizer(base_model, opt)
+    old_backbone_model = resnet50(pretrained=True)
+    old_backbone_model.cuda().eval()
+    load_model_and_optimizer(old_backbone_model, opt, old_model_state, old_opt)
+    
+    base_model = load_model('Standard_R50', './ckpts', 'imagenet', ThreatModel.corruptions).cuda()
+
+    if args.allow_adapt == 'tent':
+        print('adapt with tent')
+        model = tent.setup_tent(base_model)
+    elif args.allow_adapt == 'norm':
+        print('adapt with norm')
+        model = norm.setup_norm(base_model)
+
     for i, batch in enumerate(test_batches):
    
         x, y = batch['input'], batch['target']
         test_n += y.shape[0]
-        # with torch.no_grad():
-        #     clean_out, _ = base_model(x)
-        # print(clean_out.shape)
+        with torch.no_grad():
+            clean_out, _ = old_backbone_model(x)
 
         # clean_out = clean_out[: , :10]
-        # clean_acc += (clean_out.max(1)[1] == y).sum().item()
+        clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
-        # if aug_name is None:
-        #     delta = compute_reverse_attack(base_model, model_ssl, criterion, x,
-        #                                             epsilon, pgd_alpha, attack_iters, 'l_inf')
-        #     new_x = x + delta
+        if args.aug_name is None:
+            delta = compute_reverse_attack(old_backbone_model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_inf')
+            new_x = x + delta
 
-        # else: 
-        #     delta, param, before_loss, final_loss = compute_reverse_transformation(base_model, model_ssl, criterion, x,
-        #                                             epsilon, pgd_alpha, attack_iters, 'l_2', aug_name,  denormalize, normalize)
-        #     param_all = param.repeat(x.shape[0])
-        #     # print(delta.shape)
-        #     # print(param)
-        #     new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
+        else: 
+            
+            delta, param, before_loss, final_loss = compute_reverse_transformation(old_backbone_model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize)
+            param_all = param.repeat(x.shape[0])
+            # print(delta.shape)
+            # print(param)
+            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
         
-        #     before_loss_list.append(before_loss)
-        #     final_loss_list.append(final_loss)
+            before_loss_list.append(before_loss)
+            final_loss_list.append(final_loss)
 
         ## adapt with baseline TENT
-        print('adapt with tent!!')
-        out = tent_model(x)
+        if args.adapt_only:
+            new_x = x
+        out = model(new_x)
         acc += (out.max(1)[1] == y).sum().item()
 
         #reset model
@@ -378,8 +403,8 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, test_batches, crit
             print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
     
-    
     return clean_acc/test_n, acc/test_n
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', default=1024, type=int)
@@ -389,6 +414,7 @@ def get_args():
     parser.add_argument('--data-dir', default='../ImageNet-Data', type=str)
     parser.add_argument('--corr-dir', default='./data/ImageNetC-customize/', type=str)
     parser.add_argument('--output_dir', default='train_ssl', type=str)
+    parser.add_argument('--output_fn', default='train_ssl', type=str)
     parser.add_argument('--save_root_path', default='data/ckpts/', type=str)
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--md_path', default='./resnet50.pth', type=str)
@@ -410,6 +436,7 @@ def get_args():
 
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--allow_adapt', default='', type=str)
+    parser.add_argument('--adapt_only', action='store_true')
     parser.add_argument('--allow_gcam', action='store_true')
     parser.add_argument('--use_subclass', action='store_true')
     parser.add_argument('--aug_name', default=None, type=str)
@@ -737,13 +764,14 @@ def main():
         for i in c_idx:
             if i < 15:
                 if args.severity == 1:
-                    x_test = np.load(args.corr_dir + str(args.severity) + '/' + str(corruption_type[i])+'.npy')[0]
+                    x_test = np.load(args.corr_dir + '/' + str(args.severity) + '/' + str(corruption_type[i])+'.npy')[0]
                 else: 
-                    x_test = np.load(args.corr_dir + str(args.severity) + '/' + str(corruption_type[i])+'.npy')                  
+                    x_test = np.load(args.corr_dir + '/' + str(args.severity) + '/' + str(corruption_type[i])+'.npy')                  
                 print('load ' + args.corr_dir + str(args.severity) + '/' + str(corruption_type[i])+'.npy')
                 if len(x_test) > 5000:
                     subset_xtest = x_test[idx] 
-                # corr_dataset = load_imagenetC(str(corruption_type[i]), args.severity)     
+                # corr_dataset = load_imagenetC(str(corruption_type[i]), args.severity)    
+                print('load corruption data  --> {} {}'.format(corruption_type[i], args.severity))
             else:
                 x_test = np.load(args.corr_dir + 'original.npy')
                 print(x_test.shape)
@@ -755,9 +783,9 @@ def main():
             else:
                 test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
 
-            if args.use_subclass:
-                test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
-            print('Number of OOD test samples: ', len(x_test))
+            # if args.use_subclass:
+            #     test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
+            print('Number of OOD test samples: ', len(test_set))
             test_batches_ood = Batches(test_set, args.test_batch, shuffle=False, num_workers=2)
         
             trainer = SslTrainer()
@@ -771,21 +799,20 @@ def main():
                 # acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_orig, criterion, attack_iter, args.aug_name, normalize, denormalize)
                 if args.allow_adapt == 'memo':
                     acc1, acc2 = test_acc_reverse_vector_memo_adapt(model, ssl_head, backbone_opt, test_batches_ood, 
-                                        criterion, attack_iter, args.aug_name, normalize, denormalize)
-                elif args.allow_adapt == 'tent':
-                    acc1, acc2 = test_acc_reverse_vector_tent_adapt(model, ssl_head, test_batches_ood, criterion, attack_iter, 
-                                                                                            args.aug_name, normalize, denormalize)
+                                        criterion, attack_iter, args, normalize, denormalize)
+                elif args.allow_adapt == 'tent' or args.allow_adapt == 'norm':
+                    acc1, acc2 = test_acc_reverse_vector_tent_adapt(model, ssl_head, backbone_opt, test_batches_ood, criterion, attack_iter, 
+                                                                                            args, normalize, denormalize)
                 else:
-                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood, test_batches_orig,
+                    acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood,
                                         criterion, attack_iter, args.aug_name, normalize, denormalize, args.allow_gcam)
 
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
-                with open(os.path.join(args.output_dir, "imagenetC_memo_ONLY_test_slog.csv"), 'a') as f: 
-                        writer = csv.writer(f)
-                        writer.writerow(['l_2 ', args.aug_name, 'reverse_iter: ', args.attack_iters, 'corruption: ', corruption_type[i:i+1], 'severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
-
+                with open(os.path.join(args.output_dir, args.output_fn), 'a') as f: 
+                    writer = csv.writer(f)
+                    writer.writerow(['l_2 ', args.aug_name, 'reverse_iter: ', args.attack_iters, 'corruption: ', corruption_type[i:i+1], 'severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
         
             
     else:

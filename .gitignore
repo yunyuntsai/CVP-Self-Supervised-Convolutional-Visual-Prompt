@@ -3,4 +3,6 @@
 output/
 loss_histogram/
 data/
+train_ssl/
+ckpts/
 __pycache__
