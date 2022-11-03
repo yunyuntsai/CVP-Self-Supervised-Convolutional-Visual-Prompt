@@ -1,5 +1,20 @@
 # Self-Supervision-Test-Time-Adaptation
 
+- [UPDATE: Run TENT only / NORM only baseline]
+
+```
+bash scripts/run_tent_script.sh
+bash scripts/run_norm_script.sh
+```
+
+- [UPDATE: Run TENT + OURS / NORM + OURS baseline]
+
+```
+bash scripts/run_tent_plus_ours_script.sh
+bash scripts/run_norm__plus_ours_script.sh
+```
+
+
 - Training Contrastive SSL model for Cifar10-C
 
 ```
