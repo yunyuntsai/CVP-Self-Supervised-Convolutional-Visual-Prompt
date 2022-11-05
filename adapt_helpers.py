@@ -70,7 +70,7 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
     imagenet_r_mask = gen_mask()
 
     prior_strength = 16
-    tr_num = 4
+    tr_num = 2
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1

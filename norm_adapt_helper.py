@@ -54,7 +54,7 @@ def configure_model(model, eps, momentum, reset_stats, no_stats):
     for m in model.modules():
         if isinstance(m, nn.BatchNorm2d):
             # use batch-wise statistics in forward
-            m.eval()
+            m.train()
             # configure epsilon for stability, and momentum for updates
             m.eps = eps
             m.momentum = momentum

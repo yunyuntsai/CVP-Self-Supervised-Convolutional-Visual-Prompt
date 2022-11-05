@@ -5,6 +5,7 @@ from copy import deepcopy
 import torch.nn as nn
 import torch.jit
 import logging
+import data_utils
 logger = logging.getLogger(__name__)
 
 class Tent(nn.Module):
@@ -54,7 +55,9 @@ def forward_and_adapt(x, model, optimizer):
     Measure entropy of the model prediction, take gradients, and update params.
     """
     # forward
-    outputs = model(x)
+    imagenet_r_mask = data_utils.gen_mask()
+    outputs, _ = model(x)
+    outputs = outputs[:, imagenet_r_mask]
     # adapt
     loss = softmax_entropy(outputs).mean(0)
     loss.backward()
@@ -147,7 +150,7 @@ def setup_tent(model):
     optimizer = setup_optimizer(params)
     tent_model = Tent(model, optimizer,
                            steps=1,
-                           episodic=True)
+                           episodic=False)
     logger.info(f"model for adaptation: %s", model)
     logger.info(f"params for adaptation: %s", param_names)
     logger.info(f"optimizer for adaptation: %s", optimizer)

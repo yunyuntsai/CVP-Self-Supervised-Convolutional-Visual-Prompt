@@ -21,6 +21,7 @@ import cv2
 from PIL import Image
 import matplotlib.cm as cm
 import pathlib
+from robustbench.loaders import CustomImageFolder
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ################################################################
@@ -398,23 +399,34 @@ def imagenet1000():
 
 
 def load_imagenetC(corruption, severity):
-
-    if 'thor' in socket.gethostname():
-        data_dir='/local/rcs/yunyun/ImageNet-C'
     
     imgnet_mean=(0.485, 0.456, 0.406)
     imgnet_std=(0.229, 0.224, 0.225)
 
+    PREPROCESSINGS = {
+        'Res256Crop224':
+        transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(imgnet_mean, imgnet_std),
+        ]),
+        'Crop288':
+        transforms.Compose([transforms.CenterCrop(288),
+                            transforms.ToTensor()]),
+        None:
+        transforms.Compose([transforms.ToTensor()]),
+    }
+
+    data_dir='/local/rcs/yunyun/ImageNet-C'
+    # data_dir='/local/rcs/yunyun/SelfSupDefense-random-experiments/data/ImageNetC-customize'
+
+    prepr =  PREPROCESSINGS['Res256Crop224']
     corruption_dir = os.path.join(os.path.join(data_dir, corruption), str(severity))
 
-    dataset = datasets.ImageFolder(
-            corruption_dir,
-            transforms.Compose([
-                transforms.Resize(256), transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(imgnet_mean, imgnet_std),]))
+    imagenetc= CustomImageFolder(corruption_dir, prepr)
 
-    return dataset
+    return imagenetc
 
 def load_imagenetR():
 
@@ -424,12 +436,23 @@ def load_imagenetR():
     imgnet_mean=(0.485, 0.456, 0.406)
     imgnet_std=(0.229, 0.224, 0.225)
 
-    dataset = datasets.ImageFolder(
-            data_dir,
-            transforms.Compose([
-                transforms.Resize(256), transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(imgnet_mean, imgnet_std),]))
+    PREPROCESSINGS = {
+        'Res256Crop224':
+        transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(imgnet_mean, imgnet_std),
+        ]),
+        'Crop288':
+        transforms.Compose([transforms.CenterCrop(288),
+                            transforms.ToTensor()]),
+        None:
+        transforms.Compose([transforms.ToTensor()]),
+    }
+
+    prepr =  PREPROCESSINGS['Res256Crop224']
+    dataset = datasets.ImageFolder(data_dir, prepr)
 
     return dataset
 

@@ -11,6 +11,7 @@ import time
 import csv
 from pathlib import Path
 from torch.utils.data import Subset
+import torch.utils.data as data
 from sklearn.random_projection import johnson_lindenstrauss_min_dim
 import torch
 from tqdm import tqdm
@@ -206,21 +207,28 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         return max_delta, max_param, before_loss.item(), final_loss
    
                
-def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_iters, aug_name, normalize, denormalize, allow_gcam):
+def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_iters, args, normalize, denormalize):
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
-    test_n = 0
-    clean_acc = 0
-    acc = 0
+
+    test_n, clean_acc, acc = 0., 0., 0.
+    batch_size = args.test_batch
+    n_batches = math.ceil(5000 / batch_size)
+
     before_loss_list = []
     final_loss_list = []
 
-    # raw_dataloader_iterater = iter(test_batches_orig)
-    
-    for i, batch in enumerate(test_batches):
+    x_test, y_test, _  = next(iter(test_batches))
+    x_test, y_test = x_test.cuda(), y_test.cuda()
 
-        x, y = batch['input'], batch['target']
+    
+    # for i, batch in enumerate(test_batches):
+    for counter in range(n_batches):
+
+        x = x_test[counter * batch_size:(counter + 1) * batch_size]
+        y = y_test[counter * batch_size:(counter + 1) * batch_size]
         test_n += y.shape[0]
+        
 
         # orig_batch = next(raw_dataloader_iterater)
         # orig_x = orig_batch['input']
@@ -230,22 +238,22 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
 
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
-        if aug_name is None:
+        if args.aug_name is None:
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_inf')
             new_x = x + delta
 
         else: 
             delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_2', aug_name,  denormalize, normalize)
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize)
             param_all = param.repeat(x.shape[0])
 
-            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
+            new_x = normalize(trans_aug(args.aug_name, denormalize(x), param_all))  + delta
                 
         with torch.no_grad():
             out, _ = model(new_x)
 
-        # if allow_gcam:
+        # if args.allow_gcam:
         #     for i in range(x.shape[0]):
         #         if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
         #             target_layer = 'layer4.2'
@@ -269,9 +277,9 @@ def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, crit
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
 
-    test_n = 0
-    clean_acc = 0
-    acc = 0
+    test_n, clean_acc, acc = 0., 0., 0.
+    batch_size = args.test_batch
+    n_batches = math.ceil(5000 / batch_size)
 
     before_loss_list = []
     final_loss_list = []
@@ -279,12 +287,19 @@ def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, crit
 
     model = config_model(model)
 
-    for i, batch in enumerate(test_batches):
+    x_test, y_test, _  = next(iter(test_batches))
+    x_test, y_test = x_test.cuda(), y_test.cuda()
 
+
+    # for i, batch in enumerate(test_batches):
+    for counter in range(n_batches):
+        
         model_state, opt_state = copy_model_and_optimizer(model, opt)
 
-        x, y = batch['input'], batch['target']
+        x = x_test[counter * batch_size:(counter + 1) * batch_size]
+        y = y_test[counter * batch_size:(counter + 1) * batch_size]
         test_n += y.shape[0]
+        
         nn.BatchNorm2d.prior = 1
         with torch.no_grad():
             clean_out, _ = model(x)
@@ -330,10 +345,9 @@ def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, crit
         # acc += correctness
             #reset model
             model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
-        if i % 1 == 0:
+        if counter % 1 == 0:
             print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
-    
     
     return clean_acc/test_n, acc/test_n
 
@@ -343,9 +357,9 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches,
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
 
-    test_n = 0
-    clean_acc = 0
-    acc = 0
+    test_n, clean_acc, acc = 0., 0., 0.
+    batch_size = args.test_batch
+    n_batches = math.ceil(5000 / batch_size)
 
     before_loss_list = []
     final_loss_list = []
@@ -356,7 +370,8 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches,
     old_backbone_model.cuda().eval()
     load_model_and_optimizer(old_backbone_model, opt, old_model_state, old_opt)
     
-    base_model = load_model('Standard_R50', './ckpts', 'imagenet', ThreatModel.corruptions).cuda()
+    x_test, y_test, _  = next(iter(test_batches))
+    x_test, y_test = x_test.cuda(), y_test.cuda()
 
     if args.allow_adapt == 'tent':
         print('adapt with tent')
@@ -365,10 +380,15 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches,
         print('adapt with norm')
         model = norm.setup_norm(base_model)
 
-    for i, batch in enumerate(test_batches):
-   
-        x, y = batch['input'], batch['target']
+    # for i, batch in enumerate(test_batches):
+    for counter in range(n_batches):
+        
+        # x, y = batch['input'], batch['target']
+
+        x = x_test[counter * batch_size:(counter + 1) * batch_size]
+        y = y_test[counter * batch_size:(counter + 1) * batch_size]
         test_n += y.shape[0]
+        
         with torch.no_grad():
             clean_out, _ = old_backbone_model(x)
 
@@ -387,7 +407,7 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches,
             param_all = param.repeat(x.shape[0])
             # print(delta.shape)
             # print(param)
-            new_x = normalize(trans_aug(aug_name, denormalize(x), param_all))  + delta
+            new_x = normalize(trans_aug(args.aug_name, denormalize(x), param_all))  + delta
         
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
@@ -399,7 +419,7 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches,
         acc += (out.max(1)[1] == y).sum().item()
 
         #reset model
-        if i % 1 == 0:
+        if counter % 1 == 0:
             print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
     
@@ -763,14 +783,14 @@ def main():
             
         for i in c_idx:
             if i < 15:
-                if args.severity == 1:
-                    x_test = np.load(args.corr_dir + '/' + str(args.severity) + '/' + str(corruption_type[i])+'.npy')[0]
-                else: 
-                    x_test = np.load(args.corr_dir + '/' + str(args.severity) + '/' + str(corruption_type[i])+'.npy')                  
-                print('load ' + args.corr_dir + str(args.severity) + '/' + str(corruption_type[i])+'.npy')
-                if len(x_test) > 5000:
-                    subset_xtest = x_test[idx] 
-                # corr_dataset = load_imagenetC(str(corruption_type[i]), args.severity)    
+                # if args.severity == 1:
+                #     x_test = np.load(args.corr_dir + '/' + str(args.severity) + '/' + str(corruption_type[i])+'.npy')[0]
+                # else: 
+                #     x_test = np.load(args.corr_dir + '/' + str(args.severity) + '/' + str(corruption_type[i])+'.npy')                  
+                # print('load ' + args.corr_dir + str(args.severity) + '/' + str(corruption_type[i])+'.npy')
+                # if len(x_test) > 5000:
+                #     subset_xtest = x_test[idx] 
+                corr_dataset = load_imagenetC(str(corruption_type[i]), args.severity)    
                 print('load corruption data  --> {} {}'.format(corruption_type[i], args.severity))
             else:
                 x_test = np.load(args.corr_dir + 'original.npy')
@@ -778,15 +798,16 @@ def main():
                 print('load original.npy')
 
            
-            if len(x_test) > 5000 and i < 15:
-                test_set = list(zip(transpose(normalise(x_test[idx], imgnet_mean, imgnet_std)), h))
-            else:
-                test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
+            # if len(x_test) > 5000 and i < 15:
+            #     test_set = list(zip(transpose(normalise(x_test[idx], imgnet_mean, imgnet_std)), h))
+            # else:
+            #     test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
 
             # if args.use_subclass:
             #     test_set = list(zip(transpose(normalise(x_test, imgnet_mean, imgnet_std)), h))
-            print('Number of OOD test samples: ', len(test_set))
-            test_batches_ood = Batches(test_set, args.test_batch, shuffle=False, num_workers=2)
+            print('Number of OOD test samples: ', len(corr_dataset))
+            # test_batches_ood = Batches(corr_dataset, args.test_batch, shuffle=False, num_workers=2)
+            test_batches_ood = torch.utils.data.DataLoader(corr_dataset, batch_size=5000, shuffle=False, num_workers=2)
         
             trainer = SslTrainer()
             
@@ -805,7 +826,7 @@ def main():
                                                                                             args, normalize, denormalize)
                 else:
                     acc1, acc2 = test_acc_reverse_vector(model, ssl_head, test_batches_ood,
-                                        criterion, attack_iter, args.aug_name, normalize, denormalize, args.allow_gcam)
+                                        criterion, attack_iter, args, normalize, denormalize)
 
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
