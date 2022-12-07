@@ -21,3 +21,4 @@ do
         CUDA_VISIBLE_DEVICES=3 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_batch 16 --data-dir ../ImageNet-Data/ --corr-dir /local/rcs/yunyun/ImageNet-C/ --md_path /local/rcs/yunyun/SelfSupDefense-random-experiments/resnet50.pth  --ckpt /local/rcs/yunyun/SelfSupDefense-random-experiments/data/ckpts/imagenetc_2/ssl_contrast_best.pth --output_fn IMNETC_V2_TENT_plus_OURS_log.csv  --eval  --corruption $c --severity $s  --attack_iters 1 --aug_name sharpness --allow_adapt tent
     done
 done
+

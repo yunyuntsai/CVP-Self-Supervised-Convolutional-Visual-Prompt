@@ -695,7 +695,6 @@ def main():
         trainer = SslTrainer()
 
 
-
          
         for rm in reverse_method:
             robust_acc = []

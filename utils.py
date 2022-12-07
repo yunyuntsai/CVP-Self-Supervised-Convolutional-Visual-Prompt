@@ -219,7 +219,7 @@ class Contrastive_Transform:
       self.transforms = torch.nn.Sequential(
             #transforms.Resize(size=256),
             transforms.RandomResizedCrop(size=size),
-            transforms.ColorJitter(0.8, 0.8, 0.8 , 0.2),
+            # transforms.ColorJitter(0.8, 0.8, 0.8 , 0.2),
             # transforms.RandomGrayscale(p=0.2),
             # transforms.RandomRotation((-90, 90)),
             transforms.RandomHorizontalFlip(),)  
@@ -423,10 +423,12 @@ def load_imagenetC(corruption, severity):
 
     prepr =  PREPROCESSINGS['Res256Crop224']
     corruption_dir = os.path.join(os.path.join(data_dir, corruption), str(severity))
+    orig_dir = os.path.join(os.path.join(data_dir,'val'))
 
-    imagenetc= CustomImageFolder(corruption_dir, prepr)
+    imagenetc = CustomImageFolder(corruption_dir, prepr)
+    imagenet = CustomImageFolder(orig_dir, prepr)
 
-    return imagenetc
+    return imagenetc, imagenet
 
 def load_imagenetR():
 
@@ -478,8 +480,8 @@ def load_imagenetS():
 def load_imagenetA():
     
     data_dir = ''
-    if 'ironman' in socket.gethostname():
-        data_dir='/local/rcs/yl4888/imagenet-a'
+    if 'thor' in socket.gethostname():
+        data_dir='/local/rcs/yunyun/imagenet-a'
     
     imgnet_mean=(0.485, 0.456, 0.406)
     imgnet_std=(0.229, 0.224, 0.225)
@@ -831,7 +833,7 @@ def save_gradcam(filename, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, 
         re_gcam = (re_cmap.astype(np.float) + reverse_image.astype(np.float)) / 2
 
     # cv2.imwrite(filename, Image.fromarray(np.uint8(gcam))).save()
-    fig, ax = plt.subplots(2, 3, figsize=(12, 8))
+    fig, ax = plt.subplots(2, 4, figsize=(12, 8))
     # fig.suptitle("Snow", fontsize=18)
     plt.setp(ax, xticks=[], yticks=[])
     ax[0,0].set_title('Original', fontsize=30)
@@ -847,6 +849,10 @@ def save_gradcam(filename, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, 
     ax[0,2].set_title('Adapted', fontsize=30)
     ax[0,2].imshow(np.uint8(reverse_image[0]))
     ax[1,2].imshow(np.uint8(re_gcam[0]))
+
+    ax[0,3].set_title('Diff.', fontsize=30)
+    ax[0,3].imshow(np.uint8((reverse_image[0]-corr_image[0])*2))
+    ax[1,3].imshow(np.uint8(re_gcam[0]-corr_gcam[0]))
     
     # im = Image.fromarray(np.uint8(gcam[0]))
     print('save figs to {}'.format(filename))

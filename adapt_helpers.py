@@ -67,10 +67,9 @@ def load_model_and_optimizer(model, optimizer, model_state, optimizer_state):
 
 def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None):
     
-    imagenet_r_mask = gen_mask()
 
     prior_strength = 16
-    tr_num = 2
+    tr_num = 32
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -113,25 +112,51 @@ def test_single(model, inputs, label):
     return correctness
 
 
-
-def adapt_multiple_tent(model, inputs, optimizer, niter, batch_size):
+def adapt_multiple_tent(model, inputs, optimizer, niter, batch_size, denormalize=None):
+    
+    imagenet_r_mask = gen_mask()
 
     prior_strength = 16
+    tr_num = 2
+
+    if prior_strength < 0:
+        nn.BatchNorm2d.prior = 1
+    else:
+        nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+    
+    for iteration in range(niter):
+        optimizer.zero_grad()
+        outputs, _ = model(inputs)
+        # outputs = outputs[:, imagenet_r_mask] ##For IMGNET-R, output should be 200 classes
+        loss  = softmax_entropy(outputs).mean(0)
+        # loss, _ = marginal_entropy(outputs)
+        loss.backward()
+        optimizer.step()
+
+    nn.BatchNorm2d.prior = 1
+
+
+def test_adapt_multiple(model, inputs, label):
+
+    imagenet_r_mask = gen_mask()
+
+    prior_strength = 32
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
     else:
         nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
 
-    for iteration in range(niter):
-
-        optimizer.zero_grad()
+    with torch.no_grad():
         outputs, _ = model(inputs)
-        # print('before adapt:', outputs.max(1)[1])
-        loss  = softmax_entropy(outputs).mean(0)
-        loss.backward()
-        optimizer.step()
+        # print(outputs.max(1)[1])
+        # outputs = outputs[:, imagenet_r_mask]
+
+    correctness = (outputs.max(1)[1] == label).sum().item()
+
     nn.BatchNorm2d.prior = 1
+    return correctness
+
 
 
 def test_time_augmentation_baseline(model, inputs, batch_size, label, denormalize=None):

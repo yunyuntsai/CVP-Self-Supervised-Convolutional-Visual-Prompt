@@ -32,7 +32,7 @@ from sklearn.metrics import roc_curve
 from matplotlib import pyplot
 from robustbench.data import load_imagenetc
 from learning.resnet import resnet50
-from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_time_augmentation_baseline
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_adapt_multiple
 import tent_adapt_helper as tent
 import norm_adapt_helper as norm
 upper_limit, lower_limit = 1, 0
@@ -164,7 +164,7 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
     # import pdb; pdb.set_trace()
     isRandom = True
     isIter = True
-    transform_num = 3
+    transform_num = 2
     contrast_batch = Contrastive_Transform(X.shape[2])
 
     if isRandom and isIter:
@@ -292,7 +292,7 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
 
         if aug_name is None:
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_inf')
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2')
             with torch.no_grad():                                       
                 out, _ = model(x + delta)
                 out = out[:, imagenet_r_mask]
@@ -310,6 +310,10 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
             print('before loss: {} final_loss: {}'.format(before_loss, final_loss))
+            # for i in range(2):
+                # before_swd_score.append(swd(x, orig_x , proj_per_repeat=n_proj, n_repeat_projection=512 // n_proj))
+                # after_swd_score.append(swd(new_x, orig_x, proj_per_repeat=n_proj, n_repeat_projection=512 // n_proj))
+
 
         # out = out[: , :10]
         acc += (out.max(1)[1] == y).sum().item()
@@ -389,7 +393,7 @@ def test_acc_reverse_vector_memo_adapt(model, model_ssl, opt, test_batches, crit
     return clean_acc/test_n, acc/test_n
 
 
-def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches, criterion, attack_iters, args, normalize, denormalize):
+def test_acc_reverse_vector_tent_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, args, normalize, denormalize):
     
     epsilon = (16 / 255.)
     pgd_alpha = (4 / 255.)
@@ -402,63 +406,57 @@ def test_acc_reverse_vector_tent_adapt(base_model, model_ssl, opt, test_batches,
     final_loss_list = []
     correct = []
     imagenet_r_mask = gen_mask()
-
-    old_model_state, old_opt = copy_model_and_optimizer(base_model, opt)
-    old_backbone_model = resnet50(pretrained=True)
-    old_backbone_model.cuda().eval()
-    load_model_and_optimizer(old_backbone_model, opt, old_model_state, old_opt)
-
-    # x_test, y_test  = next(iter(test_batches))
-    # x_test, y_test = x_test.cuda(), y_test.cuda()
-
-    if args.allow_adapt == 'tent':
-        print('adapt with tent')
-        model = tent.setup_tent(base_model)
-    elif args.allow_adapt == 'norm':
-        print('adapt with norm')
-        model = norm.setup_norm(base_model)
+    
+    model = config_model(model)
 
     for i, batch in enumerate(test_batches):
-    # for counter in range(n_batches):
-        
-        # x, y = batch['input'], batch['target']
+
         x, y = batch[0].cuda(), batch[1].cuda()
-        # x = x_test[counter * batch_size:(counter + 1) * batch_size]
-        # y = y_test[counter * batch_size:(counter + 1) * batch_size]
+
+        model_state, opt_state = copy_model_and_optimizer(model, opt)
+        nn.BatchNorm2d.prior = 1
 
         test_n += y.shape[0]
         with torch.no_grad():
-            clean_out, _ = old_backbone_model(x)
+            clean_out, _ = model(x)
             clean_out = clean_out[:, imagenet_r_mask]
         # clean_out = clean_out[: , :10]
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
+        
+        if args.aug_name == 'l2':
+            print('reversed with ', args.aug_name)
 
-        if args.aug_name is None:
-            delta = compute_reverse_attack(old_backbone_model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_inf')
+            delta = compute_reverse_attack(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2')
             new_x = x + delta
 
-        else: 
-            
-            delta, param, before_loss, final_loss = compute_reverse_transformation(old_backbone_model, model_ssl, criterion, x,
+        elif args.aug_name == 'sharpness': 
+
+            print('reversed with ', args.aug_name)
+
+            delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize)
             param_all = param.repeat(x.shape[0])
             # print(delta.shape)
             # print(param)
             new_x = normalize(trans_aug(args.aug_name, denormalize(x), param_all))  + delta
         
-            before_loss_list.append(before_loss)
-            final_loss_list.append(final_loss)
-
+            # before_loss_list.append(before_loss)
+            # final_loss_list.append(final_loss)
+        
         ## adapt with baseline TENT
         if args.adapt_only:
             new_x = x
-        out = model(new_x)
-        print(clean_out.max(1)[1])
-        print(out.max(1)[1])
-        acc += (out.max(1)[1] == y).sum().item()
 
-        #reset model
+        if args.allow_adapt == 'tent':
+            print('Adapt with ', args.allow_adapt)
+            adapt_multiple_tent(model, new_x, opt, 5, new_x.shape[0], denormalize)
+        
+        correctness = test_adapt_multiple(model, new_x, y)
+        acc += correctness
+        ##reset model
+        model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
+
         if i % 1 == 0:
             print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
     print('Accuracy after SSL training: {}'.format(acc / test_n))
@@ -785,7 +783,7 @@ def main():
                 # acc1, acc2, reverse_loss_list, corr_loss_list = test_acc_reverse_vector_aug(model, dist_head, test_batches_ood, rot_transform, criterion, 0,  args.aug_name, normalize, denormalize, imagenet_r_mask)
                 if args.allow_adapt == 'memo':
                     acc2, acc1 = test_acc_reverse_vector_memo_adapt(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iter, args, normalize, denormalize)
-                elif args.allow_adapt == 'tent':
+                elif args.allow_adapt == 'tent' or args.allow_adapt == 'norm':
                     acc2, acc1 = test_acc_reverse_vector_tent_adapt(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iter, args, normalize, denormalize)
                 else:
                     acc2, acc1 = test_acc_reverse_vector(model, contrast_head, test_batches_ood, criterion, attack_iter, args.aug_name, normalize, denormalize)

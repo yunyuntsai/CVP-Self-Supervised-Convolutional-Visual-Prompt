@@ -57,7 +57,7 @@ def forward_and_adapt(x, model, optimizer):
     # forward
     imagenet_r_mask = data_utils.gen_mask()
     outputs, _ = model(x)
-    outputs = outputs[:, imagenet_r_mask]
+    # outputs = outputs[:, imagenet_r_mask]
     # adapt
     loss = softmax_entropy(outputs).mean(0)
     loss.backward()

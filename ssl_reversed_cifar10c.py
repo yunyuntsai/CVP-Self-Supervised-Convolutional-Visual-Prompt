@@ -19,7 +19,8 @@ from learning.wideresnet import WideResNet, WRN34_rot_out_branch,WRN34_rot_out_b
 from utils import *
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from RandAugment import trans_aug_list, get_transAug_param
+from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
+from RandAugment import trans_aug_list, get_transAug_param, init_sharpness_3by3_kernel, init_sharpness_5by5_kernel, init_sharpness_random_kernel, init_sharpness_random_composite_kernel
 from robustbench.utils import load_model
 from robustbench.data import load_cifar10c
 import kornia
@@ -31,6 +32,7 @@ from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer,
 from grad_cam import GradCAM, save_gradcam, BackPropagation
 import tent_adapt_helper as tent
 import norm_adapt_helper as norm
+from swd import swd
 
 mu = torch.tensor(cifar10_mean).view(3, 1, 1).cuda()
 std = torch.tensor(cifar10_std).view(3, 1, 1).cuda()
@@ -109,7 +111,7 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
 
     transform_num = 3
     contrast_batch = Contrastive_Transform(X.shape[2])
-    
+
     # delta = torch.zeros_like(X[0]).cuda()
     delta = torch.unsqueeze(torch.zeros_like(X[0]).cuda(), 0)
     if norm == "l_inf":
@@ -157,7 +159,7 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
     max_delta = delta.detach()
     return max_delta
 
-def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alpha, attack_iters, norm, aug_name):
+def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alpha, attack_iters, norm, aug_name, update_kernel):
 
     """Reverse algorithm that optimize the SSL loss via PGD"""
     # import pdb; pdb.set_trace()
@@ -166,6 +168,7 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
     transform_num = 3
     contrast_batch = Contrastive_Transform(X.shape[2])
 
+
     if isRandom and isIter:
 
 
@@ -173,8 +176,6 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
 
         step_size = 1.15 * ((eps[1] - eps[0]) / 2) / attack_iters
 
-        # delta = torch.zeros_like(X[0]).cuda()
-        # delta.uniform_(-8/255, 8/255)
         delta = torch.unsqueeze(torch.zeros_like(X[0]).cuda(), 0)
         if norm == "l_inf":
             delta.uniform_(-epsilon, epsilon)
@@ -190,33 +191,54 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             raise ValueError
 
         # param = torch.rand((X.shape[0])) * (eps[1] - eps[0]) + eps[0]
-        param = torch.rand(1) * (eps[1] - eps[0]) + eps[0]
+        init_kernel_param = init_sharpness_random_kernel(X)
+        kernel_param1 = init_kernel_param
+        init_param = torch.rand(1) * (eps[1] - eps[0]) + eps[0]
+        # init_param = torch.tensor(0.5)
+
+        param = init_param
         # delta = trans_aug(aug_name, X, param) - X 
         param.requires_grad = True
+        kernel_param1.requires_grad = True
+        # kernel_param2.requires_grad = True
         delta.requires_grad = True
 
         before_loss = SslTrainer.compute_ssl_contrastive_loss(contrast_batch(X, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=True)[0]
         for _ in range(attack_iters):
 
-            param_all = param.repeat(X.size(0))    
-            new_x = trans_aug(aug_name[0], X, param_all)  + delta
+            factor_param_all = param.repeat(X.size(0))  
+            if update_kernel==False:
+                  kernel_param = init_kernel_param
+       
+            new_x = trans_aug(aug_name[0], X, kernel_param1, factor_param_all)  + delta
             loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
 
 
             loss.backward()
             param_grad = param.grad.detach()
+            kernel_param1_grad = kernel_param1.grad.detach()
+            # kernel_param2_grad = kernel_param2.grad.detach()
             delta_grad = delta.grad.detach()
+            
 
             p = param
             g = param_grad
 
+            k1 = kernel_param1
+            g1 = kernel_param1_grad
+
             d = delta
             g2 = delta_grad
+
+            # k2 = kernel_param2
+            # g3 = kernel_param2_grad
 
             x = X
             
             p = torch.clamp(p + torch.sign(g) * step_size, eps[0], eps[1])
-
+            # k = torch.clamp(k + torch.sign(g1) * 0.1, torch.tensor(0).to(device), torch.tensor(5).to(device))
+            k1 = k1 + torch.sign(g1) * 0.1
+            # k2 = k2 + torch.sign(g3) * 0.1
             if norm == "l_inf":
                 d = torch.clamp(d + alpha * torch.sign(g2), min=-epsilon, max=epsilon)
             elif norm == "l_2":
@@ -232,11 +254,25 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             param.data = p
             param.grad.zero_()
             
+            kernel_param1.data = k1
+            kernel_param1.grad.zero_()
+
+            # kernel_param2.datqa = k2
+            # kernel_param2.grad.zero_()
+
             delta.data = d
             delta.grad.zero_()
 
             #print('update param: {}'.format(param))
         final_loss = -1 * loss.item()
+        # print('before loss: ', before_loss, 'final loss: ', final_loss)
+        if final_loss > before_loss:
+            # print('use initial kernel!!')
+            # max_kernel = [init_kernel_param[0].detach(), init_kernel_param[1].detach()]
+            max_kernel = init_kernel_param
+        else: 
+            # max_kernel = [kernel_param1.detach(), kernel_param2.detach()]
+            max_kernel = kernel_param1
         max_param = param.detach()
         max_delta = delta.detach()
         #param = param.detach()
@@ -244,7 +280,61 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         # loss = loss.item()
         #param = param.detach()
             
-        return max_delta, max_param, before_loss.item(), final_loss
+        return max_delta, max_kernel, max_param, before_loss.item(), final_loss
+
+
+def compute_reverse_semantic_only(model, model_ssl, criterion, X, epsilon, alpha, attack_iters, norm, aug_name):
+
+    """Reverse algorithm that optimize the SSL loss via PGD"""
+    # import pdb; pdb.set_trace()
+    isRandom = True
+    isIter = True
+    transform_num = 3
+    contrast_batch = Contrastive_Transform(X.shape[2])
+
+    if isRandom and isIter:
+
+
+        eps = get_transAug_param(aug_name[0])
+
+        step_size = 1.15 * ((eps[1] - eps[0]) / 2) / attack_iters
+
+
+        # param = torch.rand((X.shape[0])) * (eps[1] - eps[0]) + eps[0]
+        param = torch.rand(1) * (eps[1] - eps[0]) + eps[0]
+        # delta = trans_aug(aug_name, X, param) - X 
+        param.requires_grad = True
+
+        before_loss = SslTrainer.compute_ssl_contrastive_loss(contrast_batch(X, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=True)[0]
+        for _ in range(attack_iters):
+
+            param_all = param.repeat(X.size(0))    
+            new_x = trans_aug(aug_name[0], X, param_all)
+            loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
+
+
+            loss.backward()
+            param_grad = param.grad.detach()
+
+            p = param
+            g = param_grad
+
+            x = X
+            
+            p = torch.clamp(p + torch.sign(g) * step_size, eps[0], eps[1])
+
+            param.data = p
+            param.grad.zero_()
+            
+            #print('update param: {}'.format(param))
+        final_loss = -1 * loss.item()
+        max_param = param.detach()
+        #param = param.detach()
+
+        # loss = loss.item()
+        #param = param.detach()
+            
+        return max_param, before_loss.item(), final_loss
 
 
                 
@@ -267,52 +357,84 @@ def test_acc_reverse_vector(model, model_ssl, test_batches_orig, test_batches_oo
     
     before_loss_list = []
     final_loss_list = []
+    before_swd_list = []
+    after_swd_list = []
 
     raw_dataloader_iterater = iter(test_batches_orig)
     aug_name = args.aug_name
+    if args.norm == None: norm = 'none'
+    else: norm = args.norm[0]
     allow_gcam = args.allow_gcam
+    n_proj = 128
 
     for i, batch in enumerate(test_batches_ood):
+        before_swd_score = []
+        after_swd_score = []
         x, y = batch['input'], batch['target']
         test_n += y.shape[0]
 
-        orig_batch = next(raw_dataloader_iterater)
-        orig_x = orig_batch['input']
+        # orig_batch = next(raw_dataloader_iterater)
+        # orig_x = orig_batch['input']
 
         clean_out, _ = model(x)
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
         if aug_name is None:
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_2')
+                                                        epsilon, pgd_alpha, attack_iters, norm)
             out, _ = model(x + delta)
         else: 
-            delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_2', aug_name)
-            param_all = param.repeat(x.shape[0])
-            # print(delta.shape)
-            # print(param)
-            new_x = trans_aug(aug_name[0], x, param_all)  + delta
+            if norm == 'l_2' and aug_name!= None:
+                print('reverse with l2 and {}'.format(aug_name[0]))
+                delta, kernel, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
+                                                            epsilon, pgd_alpha, attack_iters, norm, aug_name, args.update_kernel)        
+                param_all = param.repeat(x.shape[0])
+                if args.update_kernel == 'comp':
+                    new_x = trans_aug(aug_name[0], trans_aug(aug_name[0], x, kernel[0], param_all), kernel[1], param_all) + delta
+                else:
+                    new_x = trans_aug(aug_name[0], x, kernel, param_all) + delta
+            elif norm == 'none' and aug_name != None:
+                print('reverse with {}'.format(aug_name[0]))
+                param, before_loss, final_loss = compute_reverse_semantic_only(model, model_ssl, criterion, x,
+                                                            epsilon, pgd_alpha, attack_iters, norm, aug_name, arge.update_kernel)        
+                param_all = param.repeat(x.shape[0])
+                new_x = trans_aug(aug_name[0], x,  param_all)
+
             out, _ = model(new_x)
-            
+            acc += (out.max(1)[1] == y).sum().item()
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
 
-        if allow_gcam:
-            for i in range(x.shape[0]):
-                if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
-                    target_layer = 'block3.layer.3'
-                    bp = BackPropagation(model=model)
-                    gcam = GradCAM(model=model) ##initialize grad_cam funciton
-                    compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize=False)
 
-        acc += (out.max(1)[1] == y).sum().item()
-        print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+                # before_ssim = ssim( orig_x, x, data_range=1, size_average=True)
+                # after_ssim = ssim( orig_x, new_x, data_range=1, size_average=True)
+              
+                # print('ssim score: {}, {}'.format(before_ssim, after_ssim))
+                # for i in range(2):
+                    # before_swd_score.append(swd(x, orig_x , proj_per_repeat=n_proj, n_repeat_projection=512 // n_proj))
+                    # after_swd_score.append(swd(new_x, orig_x, proj_per_repeat=n_proj, n_repeat_projection=512 // n_proj))
 
-    with open('./loss_histogram/cifar10c_fog_s1.npy', 'wb') as f:
-        np.save(f, np.array([before_loss_list, final_loss_list]))
+                # print('swd score: {}, {}'.format(before_swd_score, after_swd_score))
+                # before_swd_list.append(before_swd_score)
+                # after_swd_list.append(after_swd_score)
+
+
+            if args.allow_gcam:
+                # with open(args.output_dir + args.output_fn, 'wb') as f:
+                    # np.save(f, np.array([before_swd_list, before_swd_list]))
+                for i in range(x.shape[0]):
+                    if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
+                        target_layer = 'block3.layer.3'
+                        bp = BackPropagation(model=model)
+                        gcam = GradCAM(model=model) ##initialize grad_cam funciton
+                        compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize=False)
+
+            print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+
     print('Accuracy after SSL training: {}'.format(acc / test_n))
-
+    # print('Ssim Distance: {}, {}'.format(np.array(before_ssim_list).mean(), np.array(after_ssim_list).mean()))
+    # with open('./output/' + args.output_fn, 'wb') as f:
+        # np.save(f, [np.array(before_swd_list), np.array(after_swd_list)])
     return clean_acc/test_n, acc/test_n
 
 
@@ -468,7 +590,9 @@ def get_args():
     parser.add_argument('--allow_adapt', default='', type=str)
     parser.add_argument('--adapt_only', action='store_true')
     parser.add_argument('--allow_gcam', action='store_true')
+    parser.add_argument('--update_kernel', action='store_true')
     parser.add_argument('--aug_name', nargs='+', type=str)
+    parser.add_argument('--norm', nargs='+', type=str)
     parser.add_argument('--corruption', default='all', type=str)
     parser.add_argument('--severity', default=1, type=int)
     parser.add_argument('--attack_iters', default=1, type=int)
@@ -638,6 +762,7 @@ def main():
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     np.random.seed(args.seed)
+
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
@@ -786,9 +911,11 @@ def main():
 
                 print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc1, acc2))
 
+                # if args.norm==None:
+                #      norm == ''
                 with open(os.path.join(args.output_dir, args.output_fn), 'a') as f: 
                         writer = csv.writer(f)
-                        writer.writerow(['l_2 + ', args.aug_name, ' reverse_iter: ', args.attack_iters, ' corruption: ', corruption_type[i:i+1], ' severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
+                        writer.writerow([args.norm, args.aug_name, ' reverse_iter: ', args.attack_iters, ' corruption: ', corruption_type[i:i+1], ' severity: '+ str(args.severity), 'batch-size: '+str(args.test_batch), acc1, acc2])
 
             
     else:

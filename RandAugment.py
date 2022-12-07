@@ -151,21 +151,139 @@ preaugment = transforms.Compose([
 ])
 
 
+def init_sharpness_random_kernel(input):
+    return torch.as_tensor(torch.rand(3, 3), dtype=input.dtype, device=input.device)  
+
+def init_sharpness_random_composite_kernel(input):
+    return [torch.as_tensor(torch.rand(1, 3), dtype=input.dtype, device=input.device), torch.as_tensor(torch.rand(3, 1), dtype=input.dtype, device=input.device)]
+
+def init_sharpness_3by3_kernel(input):
+    return torch.as_tensor([[1, 1, 1], [1, 5, 1], [1, 1, 1]], dtype=input.dtype, device=input.device)
+
+def init_sharpness_5by5_kernel(input):
+    return torch.as_tensor([[1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [1, 1, 15, 1, 1], [1, 1, 1, 1, 1], [1, 1, 1, 1, 1]], dtype=input.dtype, device=input.device)
+
+def customized_sharpness(input: torch.Tensor, kernel_param: torch.Tensor, factor: torch.Union[float, torch.Tensor]) -> torch.Tensor:
+    """Apply sharpness to the input tensor.
+
+    .. image:: _static/img/sharpness.png
+
+    Implemented Sharpness function from PIL using torch ops. This implementation refers to:
+    https://github.com/tensorflow/tpu/blob/master/models/official/efficientnet/autoaugment.py#L326
+
+    Args:
+        input: image tensor with shape :math:`(*, C, H, W)` to sharpen.
+        factor: factor of sharpness strength. Must be above 0.
+            If float or one element tensor, input will be sharpened by the same factor across the whole batch.
+            If 1-d tensor, input will be sharpened element-wisely, len(factor) == len(input).
+
+    Returns:
+        Sharpened image or images with shape :math:`(*, C, H, W)`.
+
+    Example:
+        >>> x = torch.rand(1, 1, 5, 5)
+        >>> sharpness(x, 0.5).shape
+        torch.Size([1, 1, 5, 5])
+    """
+    enable_dilation = False
+
+    if not isinstance(factor, torch.Tensor):
+        factor = torch.as_tensor(factor, device=input.device, dtype=input.dtype)
+
+    if len(factor.size()) != 0 and factor.shape != torch.Size([input.size(0)]):
+        raise AssertionError(
+            "Input batch size shall match with factor size if factor is not a 0-dim tensor. "
+            f"Got {input.size(0)} and {factor.shape}"
+        )
+
+    if kernel_param.shape[0] == kernel_param.shape[1]:
+        ksize = kernel_param.shape[0]
+        kernel = (kernel_param.view(1, 1, ksize, ksize).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
+    if kernel_param.shape[0] == 1 and kernel_param.shape[1] == 3:
+        kernel = (kernel_param.view(1, 1, 1, 3).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
+    elif kernel_param.shape[0] == 3 and kernel_param.shape[1] == 1:
+        kernel = (kernel_param.view(1, 1, 3, 1).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
+    
+
+    # This shall be equivalent to depthwise conv2d:
+    # Ref: https://discuss.pytorch.org/t/depthwise-and-separable-convolutions-in-pytorch/7315/2
+
+    if enable_dilation:
+        degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, stride=1, groups=input.size(1), dilation=2)
+    else:
+        degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, stride=1, groups=input.size(1))
+    degenerate = torch.clamp(degenerate, 0.0, 1.0)
+
+    # For the borders of the resulting image, fill in the values of the original image.
+    mask = torch.ones_like(degenerate)
+    if kernel_param.shape[0] == kernel_param.shape[1]:
+        if enable_dilation:
+            padded_mask = torch.nn.functional.pad(mask, [2, 2, 2, 2])
+            padded_degenerate = torch.nn.functional.pad(degenerate, [2, 2, 2, 2])  
+
+        else:        
+            padded_mask = torch.nn.functional.pad(mask, [1, 1, 1, 1])
+            padded_degenerate = torch.nn.functional.pad(degenerate, [1, 1, 1, 1])
+    elif kernel_param.shape[0] == 1 and kernel_param.shape[1] == 3:
+        padded_mask = torch.nn.functional.pad(mask, [1, 1, 0, 0])
+        padded_degenerate = torch.nn.functional.pad(degenerate, [1, 1, 0, 0])
+    elif kernel_param.shape[0] == 3 and kernel_param.shape[1] == 1:
+        padded_mask = torch.nn.functional.pad(mask, [0, 0, 1, 1])
+        padded_degenerate = torch.nn.functional.pad(degenerate, [0, 0, 1, 1])
+    
+    result = torch.where(padded_mask == 1, padded_degenerate, input)
+
+    if len(factor.size()) == 0:
+        return _blend_one(result, input, factor)
+    return torch.stack([_blend_one(result[i], input[i], factor[i]) for i in range(len(factor))])
+
+
+
+def _blend_one(input1: torch.Tensor, input2: torch.Tensor, factor: torch.Tensor) -> torch.Tensor:
+    r"""Blend two images into one.
+
+    Args:
+        input1: image tensor with shapes like :math:`(H, W)` or :math:`(D, H, W)`.
+        input2: image tensor with shapes like :math:`(H, W)` or :math:`(D, H, W)`.
+        factor: factor 0-dim tensor.
+
+    Returns:
+        : image tensor with the batch in the zero position.
+    """
+    if not isinstance(input1, torch.Tensor):
+        raise AssertionError(f"`input1` must be a tensor. Got {input1}.")
+    if not isinstance(input2, torch.Tensor):
+        raise AssertionError(f"`input1` must be a tensor. Got {input2}.")
+
+    if isinstance(factor, torch.Tensor) and len(factor.size()) != 0:
+        raise AssertionError(f"Factor shall be a float or single element tensor. Got {factor}.")
+    if factor == 0.0:
+        return input1
+    if factor == 1.0:
+        return input2
+    diff = (input2 - input1) * factor
+    res = input1 + diff
+    if factor > 0.0 and factor < 1.0:
+        return res
+    return torch.clamp(res, 0, 1)
+
+
 
 def get_transAug_param(aug_name):
     if aug_name == 'contrast':
-        contrast_epsilon = torch.tensor((0.5, 2.5))
+        contrast_epsilon = torch.tensor((0, 2))
         return contrast_epsilon
     elif aug_name == 'brightness':
-        brightness_epsilon = torch.tensor((-0.35, 0.3))
+        brightness_epsilon = torch.tensor((0, 1))
         return brightness_epsilon
     elif aug_name == 'hue':
         hue_epsilon = torch.tensor((-pi/3, pi/3))
         return hue_epsilon
     elif aug_name == 'saturation':
-        sat_epsilon = torch.tensor((0.5, 1))
+        sat_epsilon = torch.tensor((0, 1))
+        return sat_epsilon
     elif aug_name == 'sharpness':
-        sharp_epsilon = torch.tensor((0.5, 1)) 
+        sharp_epsilon = torch.tensor((0.5, 3)) 
         return sharp_epsilon
     elif aug_name == 'solarize':
         solar_epsilon = torch.tensor((0.5, 0.7))
@@ -179,7 +297,7 @@ def trans_aug_list(aug_list, x, param_list):
         x = aug_x
     return x
 
-def trans_aug(aug_name, data, param):
+def trans_aug(aug_name, data, kernel_param, param):
     if aug_name == 'contrast':
         return kornia.enhance.adjust_contrast(data, param)  
     elif aug_name == 'brightness':
@@ -189,6 +307,8 @@ def trans_aug(aug_name, data, param):
     elif aug_name == 'saturation':
         return kornia.enhance.adjust_saturation(data, param)
     elif aug_name == 'sharpness':
-        return kornia.enhance.sharpness(data, param)
+        # return kornia.enhance.sharpness(data, param)
+        return customized_sharpness(data, kernel_param, param)
+        
 
 

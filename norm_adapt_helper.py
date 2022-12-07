@@ -15,7 +15,7 @@ class Norm(nn.Module):
     """
 
     def __init__(self, model, eps=1e-5, momentum=0.1,
-                 reset_stats=False, no_stats=False):
+                 reset_stats=True, no_stats=True):
         super().__init__()
         self.model = model
         self.model = configure_model(model, eps, momentum, reset_stats,
