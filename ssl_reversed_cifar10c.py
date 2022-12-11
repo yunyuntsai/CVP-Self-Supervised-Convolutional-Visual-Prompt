@@ -191,8 +191,13 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             raise ValueError
 
         # param = torch.rand((X.shape[0])) * (eps[1] - eps[0]) + eps[0]
-        init_kernel_param = init_sharpness_random_kernel(X)
-        kernel_param1 = init_kernel_param
+        if update_kernel == 'comp':
+            print('init with composite random kernel')
+            init_kernel_param = init_sharpness_random_composite_kernel(X)
+            kernel_param1, kernel_param2 = init_kernel_param
+        elif update_kernel == 'rand':
+            init_kernel_param = init_sharpness_random_kernel(X)
+            kernel_param1 = init_kernel_param
         init_param = torch.rand(1) * (eps[1] - eps[0]) + eps[0]
         # init_param = torch.tensor(0.5)
 
@@ -200,24 +205,28 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         # delta = trans_aug(aug_name, X, param) - X 
         param.requires_grad = True
         kernel_param1.requires_grad = True
-        # kernel_param2.requires_grad = True
+        if update_kernel == 'comp':
+            kernel_param2.requires_grad = True
         delta.requires_grad = True
 
         before_loss = SslTrainer.compute_ssl_contrastive_loss(contrast_batch(X, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=True)[0]
         for _ in range(attack_iters):
 
             factor_param_all = param.repeat(X.size(0))  
-            if update_kernel==False:
-                  kernel_param = init_kernel_param
-       
-            new_x = trans_aug(aug_name[0], X, kernel_param1, factor_param_all)  + delta
+            if update_kernel == '':
+                  kernel_param1 = init_kernel_param
+            elif update_kernel == 'rand' or update_kernel == '':
+                new_x = trans_aug(aug_name[0], X, kernel_param1, factor_param_all)  + delta
+            elif update_kernel == 'comp':
+                new_x = trans_aug(aug_name[0], trans_aug(aug_name[0], X, kernel_param1, factor_param_all), kernel_param2, factor_param_all) + delta
             loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
 
 
             loss.backward()
             param_grad = param.grad.detach()
             kernel_param1_grad = kernel_param1.grad.detach()
-            # kernel_param2_grad = kernel_param2.grad.detach()
+            if update_kernel == 'comp':
+                kernel_param2_grad = kernel_param2.grad.detach()
             delta_grad = delta.grad.detach()
             
 
@@ -230,15 +239,17 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             d = delta
             g2 = delta_grad
 
-            # k2 = kernel_param2
-            # g3 = kernel_param2_grad
+            if update_kernel == 'comp':
+                k2 = kernel_param2
+                g3 = kernel_param2_grad
 
             x = X
             
             p = torch.clamp(p + torch.sign(g) * step_size, eps[0], eps[1])
             # k = torch.clamp(k + torch.sign(g1) * 0.1, torch.tensor(0).to(device), torch.tensor(5).to(device))
             k1 = k1 + torch.sign(g1) * 0.1
-            # k2 = k2 + torch.sign(g3) * 0.1
+            if update_kernel == 'comp':
+                k2 = k2 + torch.sign(g3) * 0.1
             if norm == "l_inf":
                 d = torch.clamp(d + alpha * torch.sign(g2), min=-epsilon, max=epsilon)
             elif norm == "l_2":
@@ -256,9 +267,9 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             
             kernel_param1.data = k1
             kernel_param1.grad.zero_()
-
-            # kernel_param2.datqa = k2
-            # kernel_param2.grad.zero_()
+            if update_kernel == 'comp':
+                kernel_param2.data = k2
+                kernel_param2.grad.zero_()
 
             delta.data = d
             delta.grad.zero_()
@@ -271,8 +282,10 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             # max_kernel = [init_kernel_param[0].detach(), init_kernel_param[1].detach()]
             max_kernel = init_kernel_param
         else: 
-            # max_kernel = [kernel_param1.detach(), kernel_param2.detach()]
-            max_kernel = kernel_param1
+            if update_kernel == 'comp':
+                max_kernel = [kernel_param1.detach(), kernel_param2.detach()]
+            else:
+                max_kernel = kernel_param1
         max_param = param.detach()
         max_delta = delta.detach()
         #param = param.detach()
@@ -590,7 +603,7 @@ def get_args():
     parser.add_argument('--allow_adapt', default='', type=str)
     parser.add_argument('--adapt_only', action='store_true')
     parser.add_argument('--allow_gcam', action='store_true')
-    parser.add_argument('--update_kernel', action='store_true')
+    parser.add_argument('--update_kernel', default='', type=str)
     parser.add_argument('--aug_name', nargs='+', type=str)
     parser.add_argument('--norm', nargs='+', type=str)
     parser.add_argument('--corruption', default='all', type=str)

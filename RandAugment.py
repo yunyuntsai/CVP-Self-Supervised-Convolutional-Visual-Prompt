@@ -283,7 +283,7 @@ def get_transAug_param(aug_name):
         sat_epsilon = torch.tensor((0, 1))
         return sat_epsilon
     elif aug_name == 'sharpness':
-        sharp_epsilon = torch.tensor((0.5, 3)) 
+        sharp_epsilon = torch.tensor((0.5, 1)) 
         return sharp_epsilon
     elif aug_name == 'solarize':
         solar_epsilon = torch.tensor((0.5, 0.7))
