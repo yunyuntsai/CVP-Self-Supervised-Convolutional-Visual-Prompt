@@ -24,13 +24,12 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --batch-size 32 --test_b
 
 - To reverse Cifar10-C at Testing phase, run following line
 
+
 ```
-CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --eval --batch-size 32 --test_batch 16 \\
---data-dir ../cifar-data/ --corr-dir ./data/CIFAR-10-C-customize/ 
---md_path  ./ckpt/cifar10_standard.pth  \\
---ckpt  ./ckpt/cifar10c_ssl/ssl_contrast_199.pth \\ 
---output_dir output/{test_log save path} \\
---corruption {corruption type}  --severity {severity level 1 --> 5} --aug_name sharpness --attack_iters 1 
+CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --batch-size 32 --test_batch 16 --data-dir ../cifar-data/ 
+--corr-dir ./data/CIFAR-10-C-customize/ --md_path  ./ckpt/cifar10_standard.pth \\
+--ckpt  ./ckpt/cifar10c_ssl/ssl_contrast_199.pth  --output_fn  output/{test_log save path} \\
+--eval  --corruption {corruption type} --severity {severity level 1 --> 5} --attack_iters 5  --norm l_2 --aug_name sharpness --update_kernel {rand, comp}
 ```
  
  - 15 corruption types:  
