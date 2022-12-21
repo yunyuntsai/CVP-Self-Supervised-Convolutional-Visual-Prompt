@@ -170,8 +170,7 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             if update_kernel==False:
                   kernel_param = init_kernel_param
             new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param, factor_param_all))  + delta
-            
-            # new_x = normalize(trans_aug(aug_name, denormalize(X), param_all))  + delta
+        
             loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
 
 
@@ -180,8 +179,6 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             kernel_param_grad = kernel_param.grad.detach()
             delta_grad = delta.grad.detach()
 
-            # print(delta_grad)
-            
 
             p = param
             g = param_grad
