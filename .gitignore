@@ -3,6 +3,7 @@
 output/
 loss_histogram/
 data/
+save/
 train_ssl/
 ckpts/
 scripts/

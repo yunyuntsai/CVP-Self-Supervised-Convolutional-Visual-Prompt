@@ -21,7 +21,7 @@ from learning.wideresnet import WRN34_rot_out_branch,WRN34_rot_out_branch2
 from utils import *
 import torch.nn.functional as F
 import torchvision.transforms as transforms
-from RandAugment import trans_aug, get_transAug_param, init_sharpness_3by3_kernel, init_sharpness_5by5_kernel, init_sharpness_random_kernel
+from RandAugment import trans_aug, get_transAug_param, init_sharpness_3by3_kernel, init_sharpness_5by5_kernel, init_sharpness_random_kernel, init_sharpness_random_composite_kernel
 from robustbench.utils import load_model
 from robustbench.model_zoo.enums import ThreatModel
 from robustbench.data import load_cifar10c
@@ -116,10 +116,16 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
     max_delta = delta.detach()
     return max_delta
 
-def reset_transform_param(X, aug_name, norm, epsilon):
+def reset_transform_param(X, aug_name, norm, epsilon, update_kernel):
     
     eps = get_transAug_param(aug_name)
-    init_kernel_param = init_sharpness_random_kernel(X)
+
+    if update_kernel == 'comp':
+        print('init with composite random kernel')
+        init_kernel_param = init_sharpness_random_composite_kernel(X)
+    elif update_kernel == 'rand':
+        init_kernel_param = init_sharpness_random_kernel(X)
+
     init_param = torch.rand(1) * (eps[1] - eps[0]) + eps[0]
 
     delta = torch.unsqueeze(torch.zeros_like(X[0]).cuda(), 0)
@@ -153,38 +159,55 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         step_size = 1.15 * ((eps[1] - eps[0]) / 2) / attack_iters
 
 
-        init_factor_param, init_kernel_param, init_delta = reset_transform_param(X, aug_name, norm, epsilon)
+        init_factor_param, init_kernel_param, init_delta = reset_transform_param(X, aug_name, norm, epsilon, update_kernel)
         param = init_factor_param
-        kernel_param = init_kernel_param
+        if update_kernel == 'comp':
+            kernel_param1, kernel_param2 = init_kernel_param
+        else:
+            kernel_param1 = init_kernel_param
         delta = init_delta
 
         before_loss = SslTrainer.compute_ssl_contrastive_loss(contrast_batch(X, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=True)[0]
         
         param.requires_grad = True
-        kernel_param.requires_grad = True
+        kernel_param1.requires_grad = True
+        if update_kernel == 'comp':
+            kernel_param2.requires_grad = True
         delta.requires_grad = True
 
         for _ in range(attack_iters):
 
             factor_param_all = param.repeat(X.size(0))  
-            if update_kernel==False:
-                  kernel_param = init_kernel_param
-            new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param, factor_param_all))  + delta
-        
+            if update_kernel == '':
+                kernel_param1 = init_kernel_param
+                new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all))  + delta
+            elif update_kernel == 'rand':
+                new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all))  + delta
+            elif update_kernel == 'comp':
+                tmp_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all))
+                new_x = normalize(trans_aug(aug_name, denormalize(tmp_x), kernel_param2, factor_param_all))  + delta
+    
             loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
 
-
+            print(loss)
             loss.backward()
             param_grad = param.grad.detach()
-            kernel_param_grad = kernel_param.grad.detach()
+            
+            kernel_param_grad1 = kernel_param1.grad.detach()
+            if update_kernel == 'comp':
+                kernel_param_grad2 = kernel_param2.grad.detach()
             delta_grad = delta.grad.detach()
 
 
             p = param
             g = param_grad
 
-            k = kernel_param
-            g1 = kernel_param_grad
+            k = kernel_param1
+            g1 = kernel_param_grad1
+
+            if update_kernel == 'comp':
+                k2 = kernel_param2
+                g3 = kernel_param_grad2
 
             d = delta
             g2 = delta_grad
@@ -195,6 +218,8 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
 
             p = torch.clamp(p + torch.sign(g) * step_size, eps[0], eps[1])
             k = torch.clamp(k + torch.sign(g1) * 0.1, torch.tensor(1).to(device), torch.tensor(5).to(device))
+            if update_kernel == 'comp':
+                k2 = torch.clamp(k2 + torch.sign(g3) * 0.1, torch.tensor(1).to(device), torch.tensor(5).to(device))
 
             if norm == "l_inf":
                 d = torch.clamp(d + alpha * torch.sign(g2), min=-epsilon, max=epsilon)
@@ -211,8 +236,12 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             param.data = p
             param.grad.zero_()
             
-            kernel_param.data = k
-            kernel_param.grad.zero_()
+            kernel_param1.data = k
+            kernel_param1.grad.zero_()
+
+            if update_kernel == 'comp':
+                kernel_param2.data = k2
+                kernel_param2.grad.zero_()
 
             delta.data = d
             delta.grad.zero_()
@@ -221,9 +250,15 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         final_loss = -1 * loss.item()
         if final_loss > before_loss:
             print('use initial kernel!!')
-            max_kernel = init_kernel_param.detach()
+            if update_kernel == 'comp':
+                max_kernel = [init_kernel_param[0].detach(), init_kernel_param[1].detach()]
+            else:
+                max_kernel = init_kernel_param.detach()
         else: 
-            max_kernel = kernel_param.detach()
+            if update_kernel == 'comp':
+                max_kernel = [kernel_param1.detach(), kernel_param2.detach()]
+            else:
+                max_kernel = kernel_param1.detach()
         max_param = param.detach()
         max_delta = delta.detach()
         #param = param.detach()
@@ -289,7 +324,11 @@ def test_acc_reverse_vector(model, model_ssl, test_batches_orig, test_batches, c
                                                         denormalize, normalize, args.update_kernel)
             param_all = new_param.repeat(x.shape[0])
 
-            new_x = normalize(trans_aug(args.aug_name, denormalize(x), new_kernel, param_all))  + new_delta
+            if args.update_kernel == 'comp':
+                tmp_x = normalize(trans_aug(args.aug_name, denormalize(x), new_kernel[0], param_all))
+                new_x = normalize(trans_aug(args.aug_name, denormalize(tmp_x), new_kernel[1], param_all))  + new_delta              
+            else:
+                new_x = normalize(trans_aug(args.aug_name, denormalize(x), new_kernel, param_all))  + new_delta
             
                     
         with torch.no_grad():
@@ -305,15 +344,18 @@ def test_acc_reverse_vector(model, model_ssl, test_batches_orig, test_batches, c
         # before_swd_list.append(before_swd_score)
         # after_swd_list.append(after_swd_score)
 
-        if args.allow_gcam:
+        if args.allow_gcam and counter*batch_size < 120:
             # with open('./loss_histogram/imnetc_' + args.corruption + '_s' + str(args.severity) +'.npy', 'wb') as f:
                 # np.save(f, np.array([before_loss_list, final_loss_list]))
             for i in range(x.shape[0]):
-                if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
+                if counter*batch_size+i==59:
+                # if out.max(1)[1][i] == y[i] and clean_out.max(1)[1][i] != y[i]:
+                    print('label: ', y[i], ', reverse class: ',  out.max(1)[1][i], ', original class: ', clean_out.max(1)[1][i])
                     target_layer = 'layer4.2'
                     bp = BackPropagation(model=model)
                     gcam = GradCAM(model=model) ##initialize grad_cam funciton
-                    compute_gcam(gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize)
+                    print('computer grad cam..')
+                    compute_gcam(counter*batch_size+i, gcam, bp, orig_x[i], x[i], new_x[i], y[i], target_layer, denormalize)
 
 
 
@@ -510,7 +552,7 @@ def get_args():
 
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--allow_adapt', default='', type=str)
-    parser.add_argument('--update_kernel', action='store_true')
+    parser.add_argument('--update_kernel', default='', type=str)
     parser.add_argument('--adapt_only', action='store_true')
     parser.add_argument('--allow_gcam', action='store_true')
     parser.add_argument('--use_subclass', action='store_true')

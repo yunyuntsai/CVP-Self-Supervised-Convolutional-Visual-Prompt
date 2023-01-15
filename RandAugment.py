@@ -152,10 +152,10 @@ preaugment = transforms.Compose([
 
 
 def init_sharpness_random_kernel(input):
-    return torch.as_tensor(torch.rand(3, 3), dtype=input.dtype, device=input.device)  
+    return torch.as_tensor(torch.rand(5, 5), dtype=input.dtype, device=input.device)  
 
 def init_sharpness_random_composite_kernel(input):
-    return [torch.as_tensor(torch.rand(1, 3), dtype=input.dtype, device=input.device), torch.as_tensor(torch.rand(3, 1), dtype=input.dtype, device=input.device)]
+    return [torch.as_tensor(torch.rand(1, 5), dtype=input.dtype, device=input.device), torch.as_tensor(torch.rand(5, 1), dtype=input.dtype, device=input.device)]
 
 def init_sharpness_3by3_kernel(input):
     return torch.as_tensor([[1, 1, 1], [1, 5, 1], [1, 1, 1]], dtype=input.dtype, device=input.device)
@@ -185,7 +185,7 @@ def customized_sharpness(input: torch.Tensor, kernel_param: torch.Tensor, factor
         >>> sharpness(x, 0.5).shape
         torch.Size([1, 1, 5, 5])
     """
-    enable_interpolation = True
+    enable_interpolation = False
 
     if not isinstance(factor, torch.Tensor):
         factor = torch.as_tensor(factor, device=input.device, dtype=input.dtype)
@@ -204,23 +204,29 @@ def customized_sharpness(input: torch.Tensor, kernel_param: torch.Tensor, factor
             #interpolate kernel from ksize*ksize --> ksize+2 * ksize+2
             #normalize with sum of kernel param.
             kernel = kernel_param.view(1, 1, ksize, ksize).repeat(input.size(1), 1, 1, 1) 
-            kernel = torch.nn.functional.interpolate(kernel, (5, 5), mode='bilinear')
+            kernel = torch.nn.functional.interpolate(kernel, (7, 7), mode='bilinear')
             kernel = kernel / kernel.sum()
         else:
             kernel = (kernel_param.view(1, 1, ksize, ksize).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
-    # if kernel_param.shape[0] == 1 and kernel_param.shape[1] == 3:
-    #     kernel = (kernel_param.view(1, 1, 1, 3).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
-    # elif kernel_param.shape[0] == 3 and kernel_param.shape[1] == 1:
-    #     kernel = (kernel_param.view(1, 1, 3, 1).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
+    if kernel_param.shape[0] == 1 and kernel_param.shape[1] == 5:
+        kernel = (kernel_param.view(1, 1, 1, 5).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
+    elif kernel_param.shape[0] == 5 and kernel_param.shape[1] == 1:
+        kernel = (kernel_param.view(1, 1, 5, 1).repeat(input.size(1), 1, 1, 1)/ kernel_param.sum())
     
 
     # This shall be equivalent to depthwise conv2d:
     # Ref: https://discuss.pytorch.org/t/depthwise-and-separable-convolutions-in-pytorch/7315/2
 
     if enable_interpolation:
-        degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, padding=1, stride=1, groups=input.size(1))
+        degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, padding=2, stride=1, groups=input.size(1))
     else:
-        degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, padding=1, stride=1, groups=input.size(1))
+        if kernel_param.shape[0] == 1 or kernel_param.shape[1] == 1:
+            degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, stride=1, groups=input.size(1))
+        elif kernel_param.shape[0] == 5 and kernel_param.shape[1] == 5:
+            degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, padding=1, stride=1, groups=input.size(1))
+        elif kernel_param.shape[0] == 3 and kernel_param.shape[1] == 3:
+            degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, stride=1, groups=input.size(1))
+
     degenerate = torch.clamp(degenerate, 0.0, 1.0)
 
     # For the borders of the resulting image, fill in the values of the original image.
@@ -232,12 +238,12 @@ def customized_sharpness(input: torch.Tensor, kernel_param: torch.Tensor, factor
         else:        
             padded_mask = torch.nn.functional.pad(mask, [1, 1, 1, 1])
             padded_degenerate = torch.nn.functional.pad(degenerate, [1, 1, 1, 1])
-    # elif kernel_param.shape[0] == 1 and kernel_param.shape[1] == 3:
-    #     padded_mask = torch.nn.functional.pad(mask, [1, 1, 0, 0])
-    #     padded_degenerate = torch.nn.functional.pad(degenerate, [1, 1, 0, 0])
-    # elif kernel_param.shape[0] == 3 and kernel_param.shape[1] == 1:
-    #     padded_mask = torch.nn.functional.pad(mask, [0, 0, 1, 1])
-    #     padded_degenerate = torch.nn.functional.pad(degenerate, [0, 0, 1, 1])
+    elif kernel_param.shape[0] == 1 and kernel_param.shape[1] == 5:
+        padded_mask = torch.nn.functional.pad(mask, [2, 2, 0, 0])
+        padded_degenerate = torch.nn.functional.pad(degenerate, [2, 2, 0, 0])
+    elif kernel_param.shape[0] == 5 and kernel_param.shape[1] == 1:
+        padded_mask = torch.nn.functional.pad(mask, [0, 0, 2, 2])
+        padded_degenerate = torch.nn.functional.pad(degenerate, [0, 0, 2, 2])
     
     result = torch.where(padded_mask == 1, padded_degenerate, input)
 

@@ -221,7 +221,7 @@ class Contrastive_Transform:
             transforms.RandomResizedCrop(size=size),
             # transforms.ColorJitter(0.8, 0.8, 0.8 , 0.2),
             # transforms.RandomGrayscale(p=0.2),
-            # transforms.RandomRotation((-90, 90)),
+            transforms.RandomRotation((-90, 90)),
             transforms.RandomHorizontalFlip(),)  
             
     
@@ -621,9 +621,6 @@ def accuracy(output, target, topk=(1,)):
         _, pred = output.topk(maxk, 1, True, True)
         pred = pred.t()
 
-        print(pred)
-        print(target)
-
         correct = pred.eq(target.view(1, -1).expand_as(pred))
 
         # print('correct size', correct.size())
@@ -764,11 +761,11 @@ def cosine_scheduler(base_value, final_value, epochs, niter_per_ep, warmup_epoch
     return schedule
 
 
-def compute_gcam(gcam, bp, orig_images, corrupt_images, reverse_images, 
+def compute_gcam(index, gcam, bp, orig_images, corrupt_images, reverse_images, 
                     targets, target_layer, denormalize=True):
     ##visualize gradcam for one image
 
-    target_class = np.arange(10)
+    target_class = np.arange(1000)
 
     with torch.cuda.amp.autocast():
         if targets.item() in target_class:
@@ -797,14 +794,16 @@ def compute_gcam(gcam, bp, orig_images, corrupt_images, reverse_images,
 
             # if ids[0][0].item() != targets[i].item() and re_ids[0][0].item() == targets[i].item():
             myuuid = uuid.uuid4()
-            save_gradcam('./output/gradcam/{}-cls-{}-{}.JPEG'.format(str(myuuid).split("-")[0], corr_ids[0][0].item(), re_ids[0][0].item()), 
+            print('save grad cam!')
+            os.mkdir('./output/gradcam/img{}-rnd3by3-{}-cls-{}-{}/'.format(index, str(myuuid).split("-")[0], corr_ids[0][0].item(), re_ids[0][0].item()))
+            save_gradcam('./output/gradcam/img{}-rnd3by3-{}-cls-{}-{}/'.format(index, str(myuuid).split("-")[0], corr_ids[0][0].item(), re_ids[0][0].item()), 
                                     orig_regions[0], corr_regions[0], re_regions[0], orig_img, corr_img, re_img, denormalize, False)
                 
             gcam.remove_hook()
         torch.cuda.empty_cache()
 
 
-def save_gradcam(filename, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, reverse_image, denormalize=True, paper_cmap=False):
+def save_gradcam(dirname, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, reverse_image, denormalize=True, paper_cmap=False):
 
     orig_gcam = orig_gcam.cpu().numpy()
     if denormalize:
@@ -832,16 +831,49 @@ def save_gradcam(filename, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, 
         corr_gcam = (corr_cmap.astype(np.float) + corr_image.astype(np.float)) / 2
         re_gcam = (re_cmap.astype(np.float) + reverse_image.astype(np.float)) / 2
 
-    # cv2.imwrite(filename, Image.fromarray(np.uint8(gcam))).save()
+    filename = dirname + 'orig.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(orig_img[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'orig_gcam.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(orig_gcam[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'corrupted.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(corr_image[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'corrupted_gcam.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(corr_gcam[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'adapted.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(reverse_image[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'adapted_gcam.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(re_gcam[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'diff.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8((reverse_image[0]-corr_image[0])*3))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    filename = dirname + 'diff_gcam.JPEG'
+    plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(re_gcam[0]-corr_gcam[0]))
+    plt.xticks([]),plt.yticks([]),plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    
+    filename = dirname + 'mixed.JPEG'
     fig, ax = plt.subplots(2, 4, figsize=(12, 8))
-    # fig.suptitle("Snow", fontsize=18)
+    fig.suptitle("Snow", fontsize=18)
     plt.setp(ax, xticks=[], yticks=[])
     ax[0,0].set_title('Original', fontsize=30)
     ax[0,0].set_ylabel("Input", fontsize=30)
     ax[0,0].imshow(np.uint8(orig_img[0]))
     ax[1,0].set_ylabel("Grad-CAM", fontsize=30)
     ax[1,0].imshow(np.uint8(orig_gcam[0]))
-    # ax[0,1].set_ylabel("corrupted input", fontsize=16)
+    ax[0,1].set_ylabel("corrupted input", fontsize=16)
     ax[0,1].set_title('Corrupted', fontsize=30)
     ax[0,1].imshow(np.uint8(corr_image[0]))
     ax[1,1].imshow(np.uint8(corr_gcam[0]))
