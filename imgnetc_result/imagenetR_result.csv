@@ -1,0 +1,4 @@
+fixed3_wo_update,batch-size: ,8,before reverse: ,0.36173333333333335,after reverse: ,0.3645333333333333
+rand3_wo_update,batch-size: ,8,before reverse: ,0.36173333333333335,after reverse: ,0.3636333333333333
+fixed3,batch-size: ,8,before reverse: ,0.36173333333333335,after reverse: ,0.36506666666666665
+rand3,batch-size: ,8,before reverse: ,0.36173333333333335,after reverse: ,0.364

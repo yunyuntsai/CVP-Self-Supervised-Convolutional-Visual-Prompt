@@ -218,10 +218,10 @@ class Contrastive_Transform:
 
       self.transforms = torch.nn.Sequential(
             #transforms.Resize(size=256),
-            transforms.RandomResizedCrop(size=size),
+            # transforms.RandomResizedCrop(size=size),
             # transforms.ColorJitter(0.8, 0.8, 0.8 , 0.2),
             # transforms.RandomGrayscale(p=0.2),
-            transforms.RandomRotation((-90, 90)),
+            # transforms.RandomRotation((-90, 90)),
             transforms.RandomHorizontalFlip(),)  
             
     
@@ -288,7 +288,7 @@ class Cutout(namedtuple('Cutout', ('h', 'w'))):
 
 
 class Transform():
-    def __init__(self, dataset, transforms):
+    def __init__(self, dataset, tranFsforms):
         self.dataset, self.transforms = dataset, transforms
         self.choices = None
 
@@ -403,6 +403,8 @@ def load_imagenetC(corruption, severity):
     imgnet_mean=(0.485, 0.456, 0.406)
     imgnet_std=(0.229, 0.224, 0.225)
 
+    clip_imgnet_mean, clip_imgnet_std = (0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)
+
     PREPROCESSINGS = {
         'Res256Crop224':
         transforms.Compose([
@@ -425,8 +427,11 @@ def load_imagenetC(corruption, severity):
     corruption_dir = os.path.join(os.path.join(data_dir, corruption), str(severity))
     orig_dir = os.path.join(os.path.join(data_dir,'val'))
 
-    imagenetc = CustomImageFolder(corruption_dir, prepr)
-    imagenet = CustomImageFolder(orig_dir, prepr)
+    # imagenetc = CustomImageFolder(corruption_dir, prepr)
+    # imagenet = CustomImageFolder(orig_dir, prepr)
+    imagenetc = datasets.ImageFolder(corruption_dir, prepr)
+    imagenet = datasets.ImageFolder(orig_dir, prepr)
+
 
     return imagenetc, imagenet
 
@@ -486,12 +491,14 @@ def load_imagenetA():
     imgnet_mean=(0.485, 0.456, 0.406)
     imgnet_std=(0.229, 0.224, 0.225)
 
+    clip_imgnet_mean, clip_imgnet_std = (0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)
+
     dataset = datasets.ImageFolder(
             data_dir,
             transforms.Compose([
                 transforms.Resize(256), transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(imgnet_mean, imgnet_std),]))
+                transforms.Normalize(clip_imgnet_mean, clip_imgnet_std),]))
 
     return dataset
 
@@ -762,7 +769,7 @@ def cosine_scheduler(base_value, final_value, epochs, niter_per_ep, warmup_epoch
 
 
 def compute_gcam(index, gcam, bp, orig_images, corrupt_images, reverse_images, 
-                    targets, target_layer, denormalize=True):
+                    targets, target_layer, args, denormalize=True):
     ##visualize gradcam for one image
 
     target_class = np.arange(1000)
@@ -795,8 +802,8 @@ def compute_gcam(index, gcam, bp, orig_images, corrupt_images, reverse_images,
             # if ids[0][0].item() != targets[i].item() and re_ids[0][0].item() == targets[i].item():
             myuuid = uuid.uuid4()
             print('save grad cam!')
-            os.mkdir('./output/gradcam/img{}-rnd3by3-{}-cls-{}-{}/'.format(index, str(myuuid).split("-")[0], corr_ids[0][0].item(), re_ids[0][0].item()))
-            save_gradcam('./output/gradcam/img{}-rnd3by3-{}-cls-{}-{}/'.format(index, str(myuuid).split("-")[0], corr_ids[0][0].item(), re_ids[0][0].item()), 
+            os.mkdir('./output/gradcam_v2/{}_s{}-img{}-{}-cls-{}-{}/'.format(args.corruption, args.severity, index, args.update_kernel, corr_ids[0][0].item(), re_ids[0][0].item()))
+            save_gradcam('./output/gradcam_v2/{}_s{}-img{}-{}-cls-{}-{}/'.format(args.corruption, args.severity,index, args.update_kernel, corr_ids[0][0].item(), re_ids[0][0].item()), 
                                     orig_regions[0], corr_regions[0], re_regions[0], orig_img, corr_img, re_img, denormalize, False)
                 
             gcam.remove_hook()
@@ -833,60 +840,60 @@ def save_gradcam(dirname, orig_gcam, corr_gcam, re_gcam, orig_img, corr_image, r
 
     filename = dirname + 'orig.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(orig_img[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'orig_gcam.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(orig_gcam[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'corrupted.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(corr_image[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'corrupted_gcam.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(corr_gcam[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'adapted.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(reverse_image[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'adapted_gcam.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(re_gcam[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'diff.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8((reverse_image[0]-corr_image[0])*3))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     filename = dirname + 'diff_gcam.JPEG'
     plt.figure(figsize=(8, 8)), plt.imshow(np.uint8(re_gcam[0]-corr_gcam[0]))
-    plt.xticks([]),plt.yticks([]),plt.tight_layout()
-    plt.savefig(filename, dpi=300)
+    plt.xticks([]),plt.yticks([]),plt.tight_layout(),plt.axis('off')
+    plt.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)
     
     filename = dirname + 'mixed.JPEG'
-    fig, ax = plt.subplots(2, 4, figsize=(12, 8))
-    fig.suptitle("Snow", fontsize=18)
+    fig, ax = plt.subplots(2, 3, figsize=(9, 6))
     plt.setp(ax, xticks=[], yticks=[])
-    ax[0,0].set_title('Original', fontsize=30)
-    ax[0,0].set_ylabel("Input", fontsize=30)
+    ax[0,0].set_title('Original', fontsize=22)
+    ax[0,0].set_ylabel("Input", fontsize=22)
     ax[0,0].imshow(np.uint8(orig_img[0]))
-    ax[1,0].set_ylabel("Grad-CAM", fontsize=30)
+    ax[1,0].set_ylabel("Grad-CAM", fontsize=22)
     ax[1,0].imshow(np.uint8(orig_gcam[0]))
-    ax[0,1].set_ylabel("corrupted input", fontsize=16)
-    ax[0,1].set_title('Corrupted', fontsize=30)
+    # ax[0,1].set_ylabel("corrupted input", fontsize=16)
+    ax[0,1].set_title('Corrupted', fontsize=22)
     ax[0,1].imshow(np.uint8(corr_image[0]))
     ax[1,1].imshow(np.uint8(corr_gcam[0]))
     # ax[0,2].set_ylabel("recalibrated input", fontsize=16)
-    ax[0,2].set_title('Adapted', fontsize=30)
+    ax[0,2].set_title('Conv. Adapted', fontsize=22)
     ax[0,2].imshow(np.uint8(reverse_image[0]))
     ax[1,2].imshow(np.uint8(re_gcam[0]))
 
-    ax[0,3].set_title('Diff.', fontsize=30)
-    ax[0,3].imshow(np.uint8((reverse_image[0]-corr_image[0])*2))
-    ax[1,3].imshow(np.uint8(re_gcam[0]-corr_gcam[0]))
+    # ax[0,3].set_title('Diff.', fontsize=22)
+    # ax[0,3].imshow(np.uint8((reverse_image[0]-corr_image[0])*2))
+    # ax[1,3].imshow(np.uint8(re_gcam[0]-corr_gcam[0]))
     
     # im = Image.fromarray(np.uint8(gcam[0]))
     print('save figs to {}'.format(filename))
+    plt.axis('off')
     fig.tight_layout()
-    fig.savefig(filename, dpi=300)
+    fig.savefig(filename, bbox_inches='tight', pad_inches=0, dpi=200)

@@ -1,0 +1,16 @@
+,['l_2'],, reverse_iter: ,10, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.41369047619047616,2.245685573608156,2.098554913959806
+,['l_2'],, reverse_iter: ,1, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.3978174603174603,2.2402493575262645,2.2599580060868036
+,['l_2'],, reverse_iter: ,20, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4107142857142857,2.252397548584711,2.098279349387638
+,['l_2'],, reverse_iter: ,2, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.3998015873015873,2.257236675610618,2.2025673332668485
+,['l_2'],, reverse_iter: ,3, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.40575396825396826,2.248212591050163,2.1638408142422874
+,['l_2'],, reverse_iter: ,4, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.40773809523809523,2.250051123755319,2.135286991558378
+,['l_2'],, reverse_iter: ,30, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4107142857142857,2.244324417341323,2.1023400738125755
+,['l_2'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4097222222222222,2.247769580947028,2.115557316749815
+,['l_2'],, reverse_iter: ,10, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4117063492063492,2.245685573608156,1.884019793026031
+,['l_2'],, reverse_iter: ,1, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.3898809523809524,2.2402493575262645,2.2808897873711964
+,['l_2'],, reverse_iter: ,20, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4384920634920635,2.252397548584711,1.5623787017095656
+,['l_2'],, reverse_iter: ,2, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.3948412698412698,2.257236675610618,2.224196714068216
+,['l_2'],, reverse_iter: ,3, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.3998015873015873,2.248212591050163,2.1833151049084134
+,['l_2'],, reverse_iter: ,30, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.46130952380952384,2.244324417341323,1.3312483912422544
+,['l_2'],, reverse_iter: ,4, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4027777777777778,2.250051123755319,2.1468870355969383
+,['l_2'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.38591269841269843,0.4097222222222222,2.247769580947028,2.0937725286635143

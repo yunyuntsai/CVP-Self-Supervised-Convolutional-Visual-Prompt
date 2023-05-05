@@ -11,6 +11,7 @@ import torchvision.models as models
 from RandAugment import augmix 
 from copy import deepcopy
 from data_utils import *
+import re
 
 def marginal_entropy(outputs):
     logits = outputs - outputs.logsumexp(dim=-1, keepdim=True)
@@ -51,6 +52,34 @@ def config_model(model):
             print('modifying BN forward pass')
             nn.BatchNorm2d.prior = None
             nn.BatchNorm2d.forward = _modified_bn_forward
+    
+    return model
+
+def config_finetune_model(model):
+    """Configure model for use with tent."""
+    # train mode, because tent optimizes the model to minimize entropy
+    model.eval()
+    # disable grad, to (re-)enable only what tent updates
+    model.requires_grad_(False)
+    count_bn = 0
+    # num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # print('num parameters = {}'.format(num_parameters))
+    # for m in model.modules():
+        # if m.requires_grad:
+        # count_bn += 1
+    # configure norm for tent updates: enable grad + force batch statisics
+    for m in model.modules():
+        print(m)
+        if isinstance(m, nn.BatchNorm2d):
+            count_bn+=1
+            m.requires_grad_(True)
+            # force use of batch stats in train and eval modes
+            # m.track_running_stats = False
+            # m.running_mean = None
+            # m.running_var = None
+    num_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad==True)
+    print('num parameters = {}'.format(num_parameters))
+    # print("number of parameters count: {}".format(count_bn))
     return model
 
 def copy_model_and_optimizer(model, optimizer):
@@ -69,7 +98,7 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
     
 
     prior_strength = 16
-    tr_num = 32
+    tr_num = 4
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -90,11 +119,41 @@ def adapt_multiple(model, inputs, optimizer, niter, batch_size, denormalize=None
         optimizer.step()
     nn.BatchNorm2d.prior = 1
 
+
+def clip_adapt_multiple(model, inputs, text_tokens, optimizer, niter, batch_size, denormalize=None):
+    
+    prior_strength = 16
+    tr_num = 8
+
+    if prior_strength < 0:
+        nn.BatchNorm2d.prior = 1
+    else:
+        nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+    for iteration in range(niter):
+        if denormalize!=None:
+            aug_inputs = [augmix(denormalize(inputs[i]), normalize=True) for i in range(batch_size) for _ in range(tr_num)]
+            # aug_inputs = [inputs[i] for i in range(batch_size) for _ in range(tr_num)]
+        else:
+            aug_inputs = [augmix(inputs[i], normalize=False) for i in range(batch_size) for _ in range(tr_num)]
+
+        aug_inputs = torch.stack(aug_inputs).cuda()
+
+        optimizer.zero_grad()
+        outputs, _ = model(aug_inputs, text_tokens)
+
+        # outputs = outputs[:, imagenet_r_mask] ##For IMGNET-R, output should be 200 classes
+        loss, _ = marginal_entropy(outputs)
+        loss.backward()
+        optimizer.step()
+
+    nn.BatchNorm2d.prior = 1
+
 def test_single(model, inputs, label):
 
-    imagenet_r_mask = gen_mask()
-
-    prior_strength = 32
+    # imagenet_r_mask = gen_mask()
+    imagenet_a_mask = get_imgnet_a_mask()
+    # print('imagenet A mask: ', len(imagenet_a_mask))
+    prior_strength = 16
 
     if prior_strength < 0:
         nn.BatchNorm2d.prior = 1
@@ -104,8 +163,29 @@ def test_single(model, inputs, label):
     with torch.no_grad():
         outputs, _ = model(inputs)
         # print(outputs.max(1)[1])
-        # outputs = outputs[:, imagenet_r_mask]
+        # outputs = outputs[:, imagenet_a_mask]
     # print(label)
+    
+    correctness = (outputs.max(1)[1] == label).sum().item()
+
+    nn.BatchNorm2d.prior = 1
+    return correctness
+
+def clip_test_single(model, inputs, text_tokens, label):
+
+    imagenet_r_mask = gen_mask()
+
+    prior_strength = 16
+
+    if prior_strength < 0:
+        nn.BatchNorm2d.prior = 1
+    else:
+        nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+
+    with torch.no_grad():
+        outputs, _ = model(inputs, text_tokens)
+        # print(outputs.max(1)[1])
+        # outputs = outputs[:, imagenet_r_mask]
     correctness = (outputs.max(1)[1] == label).sum().item()
 
     nn.BatchNorm2d.prior = 1

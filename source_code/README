@@ -1,0 +1,12 @@
+README.md
+
+1. To generate the CIFAR-10-C data, please refer to the official github code https://github.com/bethgelab/imagecorruptions
+2. You should download the original CIFAR-10 dataset for training the SSL model. The standard model will be downloaded at the first time you run the training command. 
+
+3. To run our code for training, please run following command:
+>> CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_cifar10c.py --batch-size 32 --test_batch 16
+--data-dir ../cifar-data --md_path ./ckpt/cifar10_standard.pth --output_dir output/train_cifar10c_ssl --epoch 100 
+4. The standard model will store with the path ./ckpt/cifar10_standard.pth
+4. After training the SSL backbone, you can find the checkpoint in the directory [output/train_cifar10c_ssl]
+5. To evaluate CVP on CIFAR-10-C corruption, please refer to our bash script run_ours_script.sh
+6. This is just the source code for CIFAR-C. The official code will be published later.

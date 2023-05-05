@@ -8,3 +8,8 @@ train_ssl/
 ckpts/
 scripts/
 __pycache__
+*_result/
+figs/
+source_code/
+*.zip
+

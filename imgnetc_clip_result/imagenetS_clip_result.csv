@@ -1,0 +1,4 @@
+rand3,sharpness,corruption: gaussian_noise, severity: 1,batch-size: 16,39.45449900719432,39.39751223205628
+fixed3,sharpness,corruption: gaussian_noise, severity: 1,batch-size: 16,39.45449900719432,39.552752067777156
+fixed5,sharpness,corruption: gaussian_noise, severity: 1,batch-size: 16,39.45449900719432,39.35035076297651
+rand5,sharpness,corruption: gaussian_noise, severity: 1,batch-size: 16,39.45449900719432,38.87677101096724

@@ -1,0 +1,9 @@
+rand3_wo_update,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0008
+fixed3_wo_update,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0008
+fixed5_wo_update,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0013333333333333333
+rand5,batch-size: ,16,attack iters: ,5,before reverse: ,0.0,after reverse: ,0.0016
+rand5,batch-size: ,16,attack iters: ,5,before reverse: ,0.0009333333333333333,after reverse: ,0.0010666666666666667
+rand5,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0008
+rand5,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0136
+rand5,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0013333333333333333
+rand5,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0014666666666666667

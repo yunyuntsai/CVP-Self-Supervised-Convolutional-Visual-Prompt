@@ -1,0 +1,28 @@
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4557
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4561
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4769
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4817
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4863
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4837
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.486
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4712
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4654
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4936 // rank=5 eps 128 alpha 16
+,['l_inf'],, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.5063 // rank=3
+,['l_inf'],3,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.5063
+,['l_inf'],5,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4936
+,['l_inf'],7,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4735
+,['l_inf'],9,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4547
+,['l_inf'],11,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4434
+,['l_inf'],13,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.428
+,['l_inf'],15,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4152
+,['l_inf'],17,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.4037
+,['l_inf'],19,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.3921
+,['l_inf'],21,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.388
+,['l_inf'],23,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.3755
+,['l_inf'],25,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.3714
+,['l_inf'],27,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.3716
+,['l_inf'],29,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.3672
+,['l_inf'],31,, reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.3694
+,['l_inf'],3,, reverse_iter: ,5, corruption: ,['motion_blur'], severity: 1,batch-size: 16,0.5657,0.6524
+rand3_bybatch,['l_2'],3,['sharpness'], reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.3951,0.5061

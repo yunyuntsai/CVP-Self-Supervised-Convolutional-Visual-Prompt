@@ -20,7 +20,7 @@ from learning.wideresnet import WRN34_rot_out_branch,WRN34_rot_out_branch2
 from utils import *
 from data_utils import *
 import torchvision.transforms as transforms
-from RandAugment import trans_aug, get_transAug_param, init_sharpness_3by3_kernel, init_sharpness_5by5_kernel, init_sharpness_random_kernel, init_sharpness_random_composite_kernel
+from RandAugment import trans_aug, get_imgnet_transaug_param, init_sharpness_3by3_kernel, init_sharpness_5by5_kernel, init_sharpness_random_kernel_3by3, init_sharpness_random_kernel_5by5, init_sharpness_random_composite_kernel
 from robustbench.utils import load_model
 from robustbench.data import load_cifar10c
 import kornia
@@ -31,7 +31,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from matplotlib import pyplot
 from robustbench.data import load_imagenetc
-from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_adapt_multiple
+from adapt_helpers import adapt_multiple, test_single, copy_model_and_optimizer, load_model_and_optimizer, config_model, adapt_multiple_tent, test_adapt_multiple, config_finetune_model
 upper_limit, lower_limit = 1, 0
 
 imgnet_mean=(0.485, 0.456, 0.406)
@@ -125,9 +125,11 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
         raise ValueError
     #delta = clamp(delta, lower_limit - torch.mean(X, dim=0), upper_limit - torch.mean(X, dim=0))
     delta.requires_grad = True
+    mask = torch.nn.functional.pad(torch.as_tensor(torch.zeros(194,194)), [15,15,15,15], value=1).to(device)
     for _ in range(attack_iters):
 
-        new_x = X + delta
+        new_x = X + (mask*delta)
+        # new_x = X + delta
         # import pdb; pdb.set_trace()
         loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
         loss.backward()
@@ -155,32 +157,39 @@ def compute_reverse_attack(model, model_ssl, criterion, X, epsilon, alpha, attac
 
 def reset_transform_param(X, aug_name, norm, epsilon, update_kernel):
     
-    eps = get_transAug_param(aug_name)
-
+    eps = get_imgnet_transaug_param(aug_name)
     if update_kernel == 'comp':
         print('init with composite random kernel')
         init_kernel_param = init_sharpness_random_composite_kernel(X)
-    elif update_kernel == 'rand':
-        init_kernel_param = init_sharpness_random_kernel(X)
-    elif update_kernel == '':
+        kernel_param1, kernel_param2 = init_kernel_param
+    elif update_kernel == 'fixed3' or update_kernel == 'fixed3_wo_update':
+        init_kernel_param = init_sharpness_3by3_kernel(X)
+        kernel_param1 = init_kernel_param
+    elif update_kernel == 'fixed5' or update_kernel == 'fixed5_wo_update':
         init_kernel_param = init_sharpness_5by5_kernel(X)
-
+        kernel_param1 = init_kernel_param
+    elif update_kernel == 'rand3' or update_kernel == 'rand3_wo_update': 
+        init_kernel_param = init_sharpness_random_kernel_3by3(X)
+        kernel_param1 = init_kernel_param
+    elif update_kernel == 'rand5'or update_kernel == 'rand5_wo_update':
+        init_kernel_param = init_sharpness_random_kernel_5by5(X)
+        kernel_param1 = init_kernel_param
     init_param = torch.rand(1) * (eps[1] - eps[0]) + eps[0]
 
-    delta = torch.unsqueeze(torch.zeros_like(X[0]).cuda(), 0)
-    if norm == "l_inf":
-        delta.uniform_(-epsilon, epsilon)
-    elif norm == "l_2":
-        delta.normal_()
-        d_flat = delta.view(delta.size(0), -1)
-        n = d_flat.norm(p=2, dim=1).view(delta.size(0), 1, 1, 1)
-        r = torch.zeros_like(n).uniform_(0, 1)
-        delta *= r / n * epsilon
-    elif norm == 'l_1':
-        pass
-    else:
-        raise ValueError
-    return init_param, init_kernel_param, delta
+    # delta = torch.unsqueeze(torch.zeros_like(X[0]).cuda(), 0)
+    # if norm == "l_inf":
+    #     delta.uniform_(-epsilon, epsilon)
+    # elif norm == "l_2":
+    #     delta.normal_()
+    #     d_flat = delta.view(delta.size(0), -1)
+    #     n = d_flat.norm(p=2, dim=1).view(delta.size(0), 1, 1, 1)
+    #     r = torch.zeros_like(n).uniform_(0, 1)
+    #     delta *= r / n * epsilon
+    # elif norm == 'l_1':
+    #     pass
+    # else:
+    #     raise ValueError
+    return init_param, init_kernel_param
 
 def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alpha, attack_iters, norm, aug_name, denormalize, normalize, update_kernel):
 
@@ -194,18 +203,18 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
     if isRandom and isIter:
 
 
-        eps = get_transAug_param(aug_name)
+        eps = get_imgnet_transaug_param(aug_name)
 
         step_size = 1.15 * ((eps[1] - eps[0]) / 2) / attack_iters
 
-        init_factor_param, init_kernel_param, init_delta = reset_transform_param(X, aug_name, norm, epsilon, update_kernel)
+        init_factor_param, init_kernel_param= reset_transform_param(X, aug_name, norm, epsilon, update_kernel)
         param = init_factor_param
         if update_kernel == 'comp':
             kernel_param1, kernel_param2 = init_kernel_param
         else:
             kernel_param1 = init_kernel_param
 
-        delta = init_delta
+        # delta = init_delta
 
         before_loss = SslTrainer.compute_ssl_contrastive_loss(contrast_batch(X, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=True)[0]
         
@@ -213,19 +222,21 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
         kernel_param1.requires_grad = True
         if update_kernel == 'comp':
             kernel_param2.requires_grad = True
-        delta.requires_grad = True
+        # delta.requires_grad = True
 
         for _ in range(attack_iters):
 
             factor_param_all = param.repeat(X.size(0))  
-            if update_kernel == '':
+            
+            if update_kernel == 'fixed3_wo_update' or update_kernel == 'rand3_wo_update' or update_kernel == 'fixed5_wo_update' or update_kernel == 'rand5_wo_update':
                 kernel_param1 = init_kernel_param
-                new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all))  + delta
-            elif update_kernel == 'rand':
-                new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all))  + delta
+                new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all)) 
+            elif update_kernel == 'rand3' or update_kernel == 'rand5' or update_kernel == 'fixed3' or update_kernel == 'fixed5':
+                new_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all)) 
             elif update_kernel == 'comp':
                 tmp_x = normalize(trans_aug(aug_name, denormalize(X), kernel_param1, factor_param_all))
-                new_x = normalize(trans_aug(aug_name, denormalize(tmp_x), kernel_param2, factor_param_all))  + delta
+                new_x = normalize(trans_aug(aug_name, denormalize(tmp_x), kernel_param2, factor_param_all)) 
+
 
             loss = -SslTrainer.compute_ssl_contrastive_loss(contrast_batch(new_x, transform_num), criterion, model, model_ssl, X.shape[0], transform_num, no_grad=False)[0]
 
@@ -236,7 +247,7 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             if update_kernel == 'comp':
                 kernel_param_grad2 = kernel_param2.grad.detach()
 
-            delta_grad = delta.grad.detach()
+            # delta_grad = delta.grad.detach()
 
 
             p = param
@@ -249,8 +260,8 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
                 k2 = kernel_param2
                 g3 = kernel_param_grad2
 
-            d = delta
-            g2 = delta_grad
+            # d = delta
+            # g2 = delta_grad
 
             x = X
             
@@ -260,16 +271,16 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
             if update_kernel == 'comp':
                 k2 = torch.clamp(k2 + torch.sign(g3) * 0.1, torch.tensor(1).to(device), torch.tensor(5).to(device))
 
-            if norm == "l_inf":
-                d = torch.clamp(d + alpha * torch.sign(g2), min=-epsilon, max=epsilon)
-            elif norm == "l_2":
-                g_norm = torch.norm(g2.view(g2.shape[0], -1), dim=1).view(-1, 1, 1, 1)
-                scaled_g = g2 / (g_norm + 1e-10)
-                d = (d + scaled_g * alpha).view(d.size(0), -1).renorm(p=2, dim=0, maxnorm=epsilon).view_as(d)
-            elif norm == "l_1":
-                g_norm = torch.sum(torch.abs(g2.view(g2.shape[0], -1)), dim=1).view(-1, 1, 1, 1)
-                scaled_g = g2 / (g_norm + 1e-10)
-                d = (d + scaled_g * alpha).view(d.size(0), -1).renorm(p=1, dim=0, maxnorm=epsilon).view_as(d)
+            # if norm == "l_inf":
+            #     d = torch.clamp(d + alpha * torch.sign(g2), min=-epsilon, max=epsilon)
+            # elif norm == "l_2":
+            #     g_norm = torch.norm(g2.view(g2.shape[0], -1), dim=1).view(-1, 1, 1, 1)
+            #     scaled_g = g2 / (g_norm + 1e-10)
+            #     d = (d + scaled_g * alpha).view(d.size(0), -1).renorm(p=2, dim=0, maxnorm=epsilon).view_as(d)
+            # elif norm == "l_1":
+            #     g_norm = torch.sum(torch.abs(g2.view(g2.shape[0], -1)), dim=1).view(-1, 1, 1, 1)
+            #     scaled_g = g2 / (g_norm + 1e-10)
+            #     d = (d + scaled_g * alpha).view(d.size(0), -1).renorm(p=1, dim=0, maxnorm=epsilon).view_as(d)
             
             
             param.data = p
@@ -282,8 +293,8 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
                 kernel_param2.data = k2
                 kernel_param2.grad.zero_()
 
-            delta.data = d
-            delta.grad.zero_()
+            # delta.data = d
+            # delta.grad.zero_()
             #print('update param: {}'.format(param))
         
         
@@ -302,13 +313,13 @@ def compute_reverse_transformation(model, model_ssl, criterion, X, epsilon, alph
                 max_kernel = kernel_param1.detach()
 
         max_param = param.detach()
-        max_delta = delta.detach()
+        # max_delta = delta.detach()
         #param = param.detach()
 
         # loss = loss.item()
         #param = param.detach()
             
-        return max_delta, max_kernel, max_param, before_loss.item(), final_loss
+        return  max_kernel, max_param, before_loss.item(), final_loss
 
 
 
@@ -336,8 +347,9 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
     size = 128
     before_loss_list = []
     final_loss_list = []
-    imagenet_r_mask = gen_mask()
-
+    # imagenet_r_mask = gen_mask()
+    imagenet_a_mask = get_imgnet_a_mask()
+    print('imagenet A mask: ', len(imagenet_a_mask))
     # downscaling = DownScale_Transform(size)
 
     for i, batch in enumerate(test_batches):
@@ -349,30 +361,32 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
 
         with torch.no_grad():
             clean_out, _ = model(x)
-
-        #clean_out = clean_out[:, imagenet_r_mask]
+        clean_out = clean_out[:, imagenet_a_mask]
+        # print(clean_out.shape)
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
         if args.aug_name == '':
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_2')
             with torch.no_grad():                                       
-                out, _ = model(x + delta)
-                #out = out[:, imagenet_r_mask]
+                mask = torch.nn.functional.pad(torch.as_tensor(torch.zeros(194,194)), [15,15,15,15], value=1).to(device)
+                
+                out, _ = model(x + (mask*delta))
+                out = out[:, imagenet_a_mask]
         else: 
-            new_delta, new_kernel, new_param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
+            new_kernel, new_param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize, args.update_kernel)
             param_all = new_param.repeat(x.shape[0])
 
             if args.update_kernel == 'comp':
                 tmp_x = normalize(trans_aug(args.aug_name, denormalize(x), new_kernel[0], param_all))
-                new_x = normalize(trans_aug(args.aug_name, denormalize(tmp_x), new_kernel[1], param_all))  + new_delta              
+                new_x = normalize(trans_aug(args.aug_name, denormalize(tmp_x), new_kernel[1], param_all))  
             else:
-                new_x = normalize(trans_aug(args.aug_name, denormalize(x), new_kernel, param_all))  + new_delta
+                new_x = normalize(trans_aug(args.aug_name, denormalize(x), new_kernel, param_all))  
             
             with torch.no_grad():
                 out, _ = model(new_x)
-                #out = out[:, imagenet_r_mask]
+                # out = out[:, imagenet_a_mask]
 
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
@@ -389,6 +403,7 @@ def test_acc_reverse_vector(model, model_ssl, test_batches, criterion, attack_it
     return clean_acc/test_n, acc/test_n
 
 
+
 def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, args, normalize, denormalize):
     
     epsilon = (8 / 255.)
@@ -403,6 +418,8 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
     correct = []
 
     model = config_model(model)
+    imagenet_a_mask = get_imgnet_a_mask()
+    print('imagenet A mask: ', len(imagenet_a_mask))
 
     for i, batch in enumerate(test_batches):
 
@@ -413,20 +430,23 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         nn.BatchNorm2d.prior = 1
         with torch.no_grad():
             clean_out, _ = model(x)
+            clean_out = clean_out[:, imagenet_a_mask]
 
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
 
         if args.aug_name == 'l_2':
             delta = compute_reverse_attack(model, model_ssl, criterion, x,
                                                     epsilon, pgd_alpha, attack_iters, 'l_2')
-            new_x = x + delta
+            mask = torch.nn.functional.pad(torch.as_tensor(torch.zeros(194,194)), [15,15,15,15], value=1).to(device)
+            new_x = x + (mask*delta)
+            # new_x = x + delta
 
         elif args.aug_name == 'sharpness':  
-            delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize)
+            kernel, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize, args.update_kernel)
             param_all = param.repeat(x.shape[0])
 
-            new_x = normalize(trans_aug(args.aug_name, denormalize(x), param_all))  + delta
+            new_x = normalize(trans_aug(args.aug_name, denormalize(x), kernel, param_all))  
         
             before_loss_list.append(before_loss)
             final_loss_list.append(final_loss)
@@ -451,12 +471,84 @@ def test_acc_reverse_vector_adapt(model, model_ssl, opt, test_batches, criterion
         if i % 1 == 0:
             print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
         if i % 1000 == 0:
-            with open('./output/imagenetS_test_log.csv', 'a') as f: 
+            with open(os.path.join(args.output_dir, args.output_fn), 'a') as f: 
                 writer = csv.writer(f)
                 writer.writerow(['batch-size: ', str(test_n), 'before reverse: ', clean_acc/test_n, 'after reverse: ', acc/test_n])
     
     return clean_acc/test_n, acc/test_n
 
+
+def test_acc_reverse_vector_finetune(model, model_ssl, opt, test_batches, criterion, attack_iters, args):
+
+    acc = 0
+    test_n = 0
+    clean_acc = 0
+    
+    before_loss_list = []
+    final_loss_list = []
+    
+    transform_num = 3
+    
+    # model = config_model(model)
+    imagenet_a_mask = get_imgnet_a_mask()
+    for i, batch in enumerate(test_batches):
+
+        model_state, opt_state = copy_model_and_optimizer(model, opt)
+
+        x, y = batch['input'], batch['target']
+        test_n += y.shape[0]
+       
+        contrast_batch = Contrastive_Transform(x.shape[2])
+        
+        # prior_strength = 16
+        # nn.BatchNorm2d.prior = 1
+        
+        with torch.no_grad():
+            clean_out, _ = model(x)
+            clean_out = clean_out[:, imagenet_a_mask]
+        clean_acc += (clean_out.max(1)[1] == y).sum().item()
+        model = config_finetune_model(model)
+        # if prior_strength < 0:
+        #     nn.BatchNorm2d.prior = 1
+        # else:
+            # nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+
+        opt.zero_grad()
+        ssl_loss = SslTrainer.compute_ssl_contrastive_loss(contrast_batch(x, transform_num), criterion, model, model_ssl, x.shape[0], transform_num, no_grad=False)[0]   
+        
+        ssl_loss.backward()
+        opt.step()
+        # nn.BatchNorm2d.prior = 1
+
+      
+        # prior_strength = 16
+
+        # if prior_strength < 0:
+        #     nn.BatchNorm2d.prior = 1
+        # else:
+        #     nn.BatchNorm2d.prior = float(prior_strength) / float(prior_strength + 1)
+
+        with torch.no_grad():
+            outputs, _ = model(x)
+            # print(outputs.max(1)[1])
+            outputs = outputs[:, imagenet_a_mask]
+        # print(label)
+        
+        correctness = (outputs.max(1)[1] == y).sum().item()
+
+        nn.BatchNorm2d.prior = 1
+
+        acc += correctness
+
+        #reset model
+        model, opt = load_model_and_optimizer(model, opt, model_state, opt_state)
+
+        print("test number: {} before reverse: {} after reverse: {}".format(test_n, clean_acc/test_n, acc/test_n))
+    print('Accuracy after SSL training: {}'.format(acc / test_n))
+
+    # with open('./loss_histogram/cifar10c_orig.npy', 'wb') as f:
+    #     np.save(f, np.array([before_loss_list, final_loss_list]))
+    return clean_acc/test_n, acc/test_n
 
 def test_acc_reverse_vector_tent_adapt(model, model_ssl, opt, test_batches, criterion, attack_iters, args, normalize, denormalize):
     
@@ -470,8 +562,10 @@ def test_acc_reverse_vector_tent_adapt(model, model_ssl, opt, test_batches, crit
     before_loss_list = []
     final_loss_list = []
     correct = []
-    imagenet_r_mask = gen_mask()
+    # imagenet_r_mask = gen_mask()
     
+    imagenet_a_mask = get_imgnet_a_mask()
+    print('imagenet A mask: ', len(imagenet_a_mask))
     model = config_model(model)
 
     for i, batch in enumerate(test_batches):
@@ -484,6 +578,8 @@ def test_acc_reverse_vector_tent_adapt(model, model_ssl, opt, test_batches, crit
 
         with torch.no_grad():
             clean_out, _ = model(x)
+            clean_out = clean_out[:, imagenet_a_mask]
+        
 
         clean_acc += (clean_out.max(1)[1] == y).sum().item()
         
@@ -498,12 +594,12 @@ def test_acc_reverse_vector_tent_adapt(model, model_ssl, opt, test_batches, crit
 
             print('reversed with ', args.aug_name)
 
-            delta, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
-                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize)
+            kernel, param, before_loss, final_loss = compute_reverse_transformation(model, model_ssl, criterion, x,
+                                                    epsilon, pgd_alpha, attack_iters, 'l_2', args.aug_name,  denormalize, normalize, args.update_kernel)
             param_all = param.repeat(x.shape[0])
             # print(delta.shape)
             # print(param)
-            new_x = normalize(trans_aug(args.aug_name, denormalize(x), param_all))  + delta
+            new_x = normalize(trans_aug(args.aug_name, denormalize(x), kernel, param_all))  
         
             # before_loss_list.append(before_loss)
             # final_loss_list.append(final_loss)
@@ -537,7 +633,7 @@ def get_args():
     parser.add_argument('--data-dir', default='../cifar-data', type=str)
     parser.add_argument('--ood_datatype', default='', type=str)
 
-    parser.add_argument('--output_dir', default='train_ssl', type=str)
+    parser.add_argument('--output_dir', default='imgnetc_result', type=str)
     parser.add_argument('--output_fn', default='train_ssl', type=str)
     
     parser.add_argument('--fname', default='train_ssl', type=str)
@@ -854,13 +950,15 @@ def main():
                     acc2, acc1 = test_acc_reverse_vector_adapt(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iter, args, normalize, denormalize)
                 elif args.allow_adapt == 'tent' or args.allow_adapt == 'norm':
                     acc2, acc1 = test_acc_reverse_vector_tent_adapt(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iter, args, normalize, denormalize)
+                elif args.allow_adapt == 'finetune':
+                    acc2, acc1 = test_acc_reverse_vector_finetune(model, contrast_head, backbone_opt, test_batches_ood, criterion, attack_iters, args)
                 else:
                     acc2, acc1 = test_acc_reverse_vector(model, contrast_head, test_batches_ood, criterion, attack_iter, args, normalize, denormalize)
                 # print("Reverse with cross, acc before reversed: {} acc after reversed: {} ".format(acc2, acc1))
 
-                with open('./output/imagenetA_test_log.csv', 'a') as f: 
+                with open(os.path.join(args.output_dir, args.output_fn), 'a') as f: 
                         writer = csv.writer(f)
-                        writer.writerow(['batch-size: ', str(args.test_batch), 'before reverse: ', acc2, 'after reverse: ', acc1])
+                        writer.writerow([args.update_kernel, args.ksize, 'batch-size', str(args.test_batch), 'attack iters', str(args.attack_iters), 'before reverse', acc2, 'after reverse', acc1])
         
                 # with open('loss_histogram/pixelate_v2_loss_hitogram.npy', 'wb') as f:
                 #      np.save(f, list(zip(orig_loss_list, corr_loss_list,  reverse_loss_list))) 

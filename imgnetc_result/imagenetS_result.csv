@@ -1,0 +1,9 @@
+rand3,batch-size: ,5,before reverse: ,0.2409165045491167,after reverse: ,0.24647762777810528
+fixed3,batch-size: ,5,before reverse: ,0.2409165045491167,after reverse: ,0.24675273634773723
+rand5,batch-size: ,5,before reverse: ,0.2409165045491167,after reverse: ,0.24506278370571244
+fixed5,batch-size: ,5,attack iters: ,1,before reverse: ,0.2409165045491167,after reverse: ,0.2464186759417556
+rand3,batch-size: ,5,attack iters: ,5,before reverse: ,0.2409165045491167,after reverse: ,0.24704749552948574
+fixed5,batch-size: ,5,attack iters: ,5,before reverse: ,0.2409165045491167,after reverse: ,0.24649727839022187
+rand3,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0008
+rand3,batch-size: ,16,attack iters: ,1,before reverse: ,0.0,after reverse: ,0.0008
+rand3,batch-size: ,16,attack iters: ,5,before reverse: ,0.0,after reverse: ,0.0008

@@ -20,7 +20,7 @@ from utils import *
 def _augmix_aug(x_orig, normalize=True):
     # x_orig = preaugment(x_orig)
     
-    x_orig = Image.fromarray(np.transpose(np.uint8(x_orig.cpu().numpy()*255), (1,2,0)))
+    x_orig = Image.fromarray(np.transpose(np.uint8(x_orig.cpu().detach().numpy()*255), (1,2,0)))
     # unique_str = str(uuid.uuid4())[:8]
     # x_orig.save(os.path.join('./output/test_gaussian', unique_str + '.jpg'))
 
@@ -138,9 +138,12 @@ augmentations = [
 
 mean = [0.485, 0.456, 0.406]
 std = [0.229, 0.224, 0.225]
+
+clip_mean = [0.48145466, 0.4578275, 0.40821073]
+clip_std = [0.26862954, 0.26130258, 0.27577711]
 preprocess_norm = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize(mean, std)
+    transforms.Normalize(clip_mean, clip_std)
 ])
 preprocess = transforms.Compose([
     transforms.ToTensor()
@@ -151,7 +154,16 @@ preaugment = transforms.Compose([
 ])
 
 
-def init_sharpness_random_kernel(input):
+def init_sharpness_random_kernel(input, kernel_size):
+    return torch.as_tensor(torch.rand(kernel_size, kernel_size), dtype=input.dtype, device=input.device)
+
+def init_sharpness_random_kernel_3by3(input):
+    return torch.as_tensor(torch.rand(3, 3), dtype=input.dtype, device=input.device)
+
+def init_sharpness_random_kernel_3by3_batch(input):
+    return torch.as_tensor(torch.rand(input.shape[0], 3, 3), dtype=input.dtype, device=input.device)
+
+def init_sharpness_random_kernel_5by5(input):
     return torch.as_tensor(torch.rand(5, 5), dtype=input.dtype, device=input.device)  
 
 def init_sharpness_random_composite_kernel(input):
@@ -222,9 +234,7 @@ def customized_sharpness(input: torch.Tensor, kernel_param: torch.Tensor, factor
     else:
         if kernel_param.shape[0] == 1 or kernel_param.shape[1] == 1:
             degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, stride=1, groups=input.size(1))
-        elif kernel_param.shape[0] == 5 and kernel_param.shape[1] == 5:
-            degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, padding=1, stride=1, groups=input.size(1))
-        elif kernel_param.shape[0] == 3 and kernel_param.shape[1] == 3:
+        elif kernel_param.shape[0] == kernel_param.shape[1]:
             degenerate = torch.nn.functional.conv2d(input, kernel, bias=None, stride=1, groups=input.size(1))
 
     degenerate = torch.clamp(degenerate, 0.0, 1.0)
@@ -235,9 +245,10 @@ def customized_sharpness(input: torch.Tensor, kernel_param: torch.Tensor, factor
         if enable_interpolation:
             padded_mask = torch.nn.functional.pad(mask, [1, 1, 1, 1])
             padded_degenerate = torch.nn.functional.pad(degenerate, [1, 1, 1, 1])  
-        else:        
-            padded_mask = torch.nn.functional.pad(mask, [1, 1, 1, 1])
-            padded_degenerate = torch.nn.functional.pad(degenerate, [1, 1, 1, 1])
+        else:       
+            ps = ksize//2 
+            padded_mask = torch.nn.functional.pad(mask, [ps, ps, ps, ps])
+            padded_degenerate = torch.nn.functional.pad(degenerate, [ps, ps, ps, ps])
     elif kernel_param.shape[0] == 1 and kernel_param.shape[1] == 5:
         padded_mask = torch.nn.functional.pad(mask, [2, 2, 0, 0])
         padded_degenerate = torch.nn.functional.pad(degenerate, [2, 2, 0, 0])
@@ -283,7 +294,9 @@ def _blend_one(input1: torch.Tensor, input2: torch.Tensor, factor: torch.Tensor)
 
 
 
-def get_transAug_param(aug_name):
+def get_transAug_param(aug_name, corr_type):
+    
+    noise_list = ['gaussian_noise', 'impulse_noise', 'shot_noise', 'brightness', 'snow', 'frost']
     if aug_name == 'contrast':
         contrast_epsilon = torch.tensor((0, 2))
         return contrast_epsilon
@@ -297,11 +310,20 @@ def get_transAug_param(aug_name):
         sat_epsilon = torch.tensor((0, 1))
         return sat_epsilon
     elif aug_name == 'sharpness':
-        sharp_epsilon = torch.tensor((0.5, 1)) 
+        if corr_type in noise_list:
+            sharp_epsilon = torch.tensor((0.5, 1))
+        else: sharp_epsilon = torch.tensor((0.5, 3)) 
         return sharp_epsilon
     elif aug_name == 'solarize':
         solar_epsilon = torch.tensor((0.5, 0.7))
         return solar_epsilon
+
+def get_imgnet_transaug_param(aug_name):
+  
+    if aug_name == 'sharpness':
+        sharp_epsilon = torch.tensor((0.5, 1))
+        return sharp_epsilon
+
 
 
 def trans_aug_list(aug_list, x, param_list):
@@ -323,6 +345,15 @@ def trans_aug(aug_name, data, kernel_param, param):
     elif aug_name == 'sharpness':
         # return kornia.enhance.sharpness(data, param)
         return customized_sharpness(data, kernel_param, param)
+
+def trans_aug_bybatch(aug_name, data, kernel_param, param):
+    if aug_name == 'sharpness':
+        new_data_list = []
+        # return kornia.enhance.sharpness(data, param)
+        for i in range(data.shape[0]):
+            new_data = customized_sharpness(data[i].unsqueeze(0), kernel_param[i], param[i])
+            new_data_list.append(new_data.squeeze(0))
+        return torch.stack(new_data_list, dim = 0)
         
 
 
