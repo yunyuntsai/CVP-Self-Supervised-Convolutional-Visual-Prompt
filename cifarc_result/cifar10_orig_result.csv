@@ -1,4 +1,0 @@
-fixed3,['l_2'],['sharpness'], reverse_iter: ,1, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.9478,0.9467
-rand3,['l_2'],['sharpness'], reverse_iter: ,1, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.9478,0.9455
-fixed3,['l_2'],['sharpness'], reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.9478,0.9479
-fixed3,['l_2'],['sharpness'], reverse_iter: ,5, corruption: ,['gaussian_noise'], severity: 1,batch-size: 16,0.9478,0.9479
