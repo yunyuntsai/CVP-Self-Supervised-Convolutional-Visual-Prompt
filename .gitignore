@@ -7,12 +7,14 @@ save/
 train_ssl/
 ckpts/
 scripts/
-__pycache__
 cifarc_clip_result/
 cifarc_result/
 imgnetc_clip_result/
 imgnetc_result/
+source_code/
 figs/
 source_code/
 *.zip
+__pycache__
+
 
