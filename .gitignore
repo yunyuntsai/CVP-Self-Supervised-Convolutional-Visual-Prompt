@@ -8,7 +8,10 @@ train_ssl/
 ckpts/
 scripts/
 __pycache__
-*_result/
+cifarc_clip_result/
+cifarc_result/
+imgnetc_clip_result/
+imgnetc_result/
 figs/
 source_code/
 *.zip
