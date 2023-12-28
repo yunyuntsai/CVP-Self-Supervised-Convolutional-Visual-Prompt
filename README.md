@@ -1,19 +1,5 @@
-# Self-Supervision-Test-Time-Adaptation
-
-- [UPDATE: Run TENT only / NORM only baseline]
-
-```
-bash scripts/run_tent_script.sh
-bash scripts/run_norm_script.sh
-```
-
-- [UPDATE: Run TENT + OURS / NORM + OURS baseline]
-
-```
-bash scripts/run_tent_plus_ours_script.sh
-bash scripts/run_norm__plus_ours_script.sh
-```
-
+# Self-Supervision-Convolutional Visual Prompt for Test-Time-Adaptation
+This is a PyTorch/GPU implementation of the paper [Convolutional Visual Prompt for Robust Visual Perception](https://arxiv.org/pdf/2303.00198.pdf) 
 
 - Training Contrastive SSL model for Cifar10-C
 
@@ -64,6 +50,20 @@ CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetR.py --batch-size 32 --test_ba
 CUDA_VISIBLE_DEVICES=0 python3 ssl_reversed_imgnetc.py --batch-size 32 --test_batch 5 --eval --allow_adapt\\
 --data-dir ../ImageNet-Data/ --corr-dir ./data/ImageNetC-customize/ --md_path ./resnet50.pth  --ckpt ./data/ckpts/imagenetc_ssl/ssl_contrast_best.pth  
 --corruption {corruption type}  --severity {severity level 1 --> 5} --aug_name sharpness --attack_iters 1 --output_dir output/{test_log save path}
+```
+
+- [UPDATE: Run TENT only / NORM only baseline]
+
+```
+bash scripts/run_tent_script.sh
+bash scripts/run_norm_script.sh
+```
+
+- [UPDATE: Run TENT + OURS / NORM + OURS baseline]
+
+```
+bash scripts/run_tent_plus_ours_script.sh
+bash scripts/run_norm__plus_ours_script.sh
 ```
 
 - For the pretrained checkpoint, please download from following links
